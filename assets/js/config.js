@@ -3,8 +3,8 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 // =============================================================================
 // 1. CONFIGURATION (REPLACE THESE VALUES)
 // =============================================================================
-const SUPABASE_URL = 'https://YOUR_PROJECT_ID.supabase.co';
-const SUPABASE_KEY = 'YOUR_ANON_KEY';
+const SUPABASE_URL = 'https://axyraxrxizknbptyfnhz.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_JBn5a8mYFO9V79Q1oD8zZQ_iwMeDKN-';
 
 if (SUPABASE_URL.includes('YOUR_PROJECT_ID')) {
     console.error('🛑 CRITICAL: Supabase credentials not set in assets/js/config.js');
