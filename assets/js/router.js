@@ -1,7 +1,7 @@
 import { state, showToast, supabase } from './config.js';
 import * as UI from './ui.js';
 import * as Accounting from './accounting.js';
-import { handleLogout } from './auth.js'; // Import auth to ensure session checks logic is available
+import * as Reports from './reports.js'; // Ensure reports.js is imported
 
 // =============================================================================
 // 1. ROUTE DEFINITIONS
@@ -9,6 +9,7 @@ import { handleLogout } from './auth.js'; // Import auth to ensure session check
 const routes = {
     'dashboard': loadDashboard,
     'voucher': loadVoucherEntry,
+    'ledger-create': loadLedgerCreate, // <--- New Route for Masters
     'balance-sheet': loadBalanceSheet,
     'profit-loss': loadProfitLoss,
     'trial-balance': loadTrialBalance,
@@ -38,13 +39,14 @@ export async function navigateTo(routeName) {
         }
     });
 
-    // 3. Clear current view
+    // 3. Clear current view & Show Loader
     const appView = document.getElementById('app-view');
     appView.innerHTML = '<div class="flex items-center justify-center h-full"><div class="loader-green"></div></div>';
 
     // 4. Update Header Title
     const titleMap = {
         'dashboard': 'Gateway of Mally',
+        'ledger-create': 'Ledger Creation',
         'voucher': 'Accounting Voucher Creation',
         'balance-sheet': 'Balance Sheet',
         'profit-loss': 'Profit & Loss A/c',
@@ -76,7 +78,6 @@ export async function navigateTo(routeName) {
 async function loadDashboard(container) {
     if (!state.currentCompany) {
         container.innerHTML = UI.renderEmptyDashboard();
-        // Auto open modal if no company exists
         const modal = document.getElementById('modal-company');
         if (modal && !modal.open) modal.showModal();
         return;
@@ -91,6 +92,13 @@ async function loadDashboard(container) {
     }
 }
 
+async function loadLedgerCreate(container) {
+    // Fetch Groups first (Assets, Liabilities, etc.) for the dropdown
+    const groups = await Accounting.getGroups();
+    container.innerHTML = UI.renderLedgerForm();
+    UI.initLedgerFormLogic(groups);
+}
+
 async function loadVoucherEntry(container) {
     const ledgers = await Accounting.getLedgers();
     container.innerHTML = UI.renderVoucherForm();
@@ -103,15 +111,12 @@ async function loadBalanceSheet(container) {
 }
 
 async function loadProfitLoss(container) {
-    const data = await Reports.generateProfitLoss(); // Ensure Reports is imported if used directly or passed via main import
-    // Note: In previous steps we routed these through UI/Reports imports. 
-    // If Reports isn't imported at top, add: import * as Reports from './reports.js';
+    const data = await Reports.generateProfitLoss();
     container.innerHTML = UI.renderProfitLoss(data);
 }
 
 async function loadTrialBalance(container) {
-    // Ensure Reports is imported
-    const data = await import('./reports.js').then(m => m.generateTrialBalance());
+    const data = await Reports.generateTrialBalance();
     container.innerHTML = UI.renderTrialBalance(data);
 }
 
@@ -121,7 +126,7 @@ async function loadDayBook(container) {
 }
 
 // =============================================================================
-// 4. APP INITIALIZATION (THE FIX)
+// 4. APP INITIALIZATION
 // =============================================================================
 
 async function initApp() {
@@ -149,7 +154,7 @@ async function initApp() {
     try {
         const companies = await Accounting.getCompanies();
         
-        // Populate Company Modal List (in case they want to switch)
+        // Populate Company Modal List
         const listContainer = document.getElementById('company-list-container');
         if (listContainer) {
             if (companies.length === 0) {
@@ -164,15 +169,12 @@ async function initApp() {
             }
         }
 
-        // 4. Select Default Company (First one found)
+        // 4. Select Default Company
         if (companies.length > 0) {
-            // Logic: You could save last used company in localStorage
             const lastId = localStorage.getItem('mally_last_company_id');
             const target = companies.find(c => c.id === lastId) || companies[0];
-            
             selectCompany(target);
         } else {
-            // No companies -> Show Dashboard (which renders "Create Company" state)
             state.currentCompany = null;
         }
 
@@ -183,7 +185,7 @@ async function initApp() {
 
     // 5. Hide Loader & Render Dashboard
     const loader = document.getElementById('global-loader');
-    if (loader) loader.classList.add('hidden'); // This removes the spinner
+    if (loader) loader.classList.add('hidden');
     
     navigateTo('dashboard');
 }
@@ -250,9 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast('Company Created!', 'success');
                 document.getElementById('modal-create-company').close();
                 createForm.reset();
-                // Select the new company immediately
                 selectCompany(newCompany);
-                // Refresh App (Simple way to ensure all lists update)
                 initApp(); 
             } catch (err) {
                 showToast(err.message, 'error');
