@@ -431,6 +431,110 @@ export function renderDayBook(vouchers) {
     `;
 }
 
+export function renderLedgerForm() {
+    return `
+    <div class="max-w-2xl mx-auto bg-white border border-gray-200 shadow-sm rounded-lg p-6">
+        <h2 class="text-lg font-bold text-gray-700 mb-6 border-b pb-2">Ledger Creation</h2>
+        
+        <form id="ledger-form" class="space-y-5">
+            <div class="grid grid-cols-12 gap-4 items-center">
+                <label class="col-span-3 text-sm font-bold text-gray-600">Name</label>
+                <div class="col-span-9">
+                    <input type="text" id="l-name" required class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none uppercase" placeholder="e.g. HDFC BANK">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-12 gap-4 items-center">
+                <label class="col-span-3 text-sm font-bold text-gray-600">Under (Group)</label>
+                <div class="col-span-9 relative">
+                    <input type="text" id="l-group-search" list="group-list" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none" placeholder="Select Group...">
+                    <datalist id="group-list"></datalist>
+                    <input type="hidden" id="l-group-id">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-12 gap-4 items-center border-t border-gray-100 pt-4">
+                <label class="col-span-3 text-sm font-bold text-gray-600">Opening Balance</label>
+                <div class="col-span-5">
+                    <input type="number" id="l-op-bal" step="0.01" value="0" class="w-full border border-gray-300 rounded p-2 text-sm text-right focus:ring-2 ring-emerald-500 outline-none">
+                </div>
+                <div class="col-span-4">
+                    <select id="l-op-type" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none">
+                        <option value="Dr">Dr</option>
+                        <option value="Cr">Cr</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-12 gap-4 items-center pt-2">
+                <label class="col-span-3 text-sm font-bold text-gray-600">GST Number</label>
+                <div class="col-span-9">
+                    <input type="text" id="l-gst" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none uppercase" placeholder="Optional">
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 mt-8 pt-4 border-t">
+                <button type="button" onclick="history.back()" class="px-6 py-2 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium">Cancel</button>
+                <button type="submit" class="px-6 py-2 rounded bg-emerald-600 text-white shadow hover:bg-emerald-700 text-sm font-medium">Create Ledger (Enter)</button>
+            </div>
+        </form>
+    </div>
+    `;
+}
+
+export function initLedgerFormLogic(groups) {
+    const datalist = document.getElementById('group-list');
+    const searchInput = document.getElementById('l-group-search');
+    const hiddenId = document.getElementById('l-group-id');
+    const form = document.getElementById('ledger-form');
+
+    // 1. Populate Groups
+    groups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g.name;
+        opt.dataset.id = g.id;
+        opt.textContent = `(${g.primary_group})`; // Hints
+        datalist.appendChild(opt);
+    });
+
+    // 2. Handle Group Selection logic (Map name to ID)
+    searchInput.addEventListener('change', () => {
+        const option = Array.from(datalist.options).find(o => o.value === searchInput.value);
+        if (option) {
+            hiddenId.value = option.dataset.id;
+        } else {
+            hiddenId.value = '';
+        }
+    });
+
+    // 3. Handle Submit
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const name = document.getElementById('l-name').value;
+        const groupId = hiddenId.value;
+        const opBal = parseFloat(document.getElementById('l-op-bal').value || 0);
+        const opType = document.getElementById('l-op-type').value;
+        const gst = document.getElementById('l-gst').value;
+
+        if (!groupId) {
+            showToast('Please select a valid Group from the list', 'error');
+            return;
+        }
+
+        try {
+            await Accounting.createLedger({
+                name, groupId, openingBalance: opBal, openingType: opType, gst
+            });
+            showToast(`Ledger '${name}' created!`, 'success');
+            form.reset();
+            document.getElementById('l-name').focus(); // Ready for next
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
+    });
+}
+
 // Stubs for other reports to prevent errors
 export function renderProfitLoss(data) { return renderBalanceSheet(data); /* Placeholder */ }
 export function renderTrialBalance(data) { return renderBalanceSheet(data); /* Placeholder */ }
