@@ -28,7 +28,7 @@ export async function createCompany(companyData) {
             owner_id: state.user.id,
             name: companyData.name,
             financial_year_start: companyData.fy_start,
-            books_beginning_from: companyData.fy_start, // Assuming same for MVP
+            books_beginning_from: companyData.fy_start, 
             currency_symbol: companyData.currency || '₹',
             address: companyData.address
         })
@@ -38,7 +38,6 @@ export async function createCompany(companyData) {
     if (error) throw error;
 
     // 2. Trigger Database Function to create default Groups & Ledgers
-    // (This calls the PL/pgSQL function defined in schema.sql)
     const { error: rpcError } = await supabase.rpc('setup_company_defaults', {
         new_company_id: company.id
     });
@@ -56,7 +55,7 @@ export async function createCompany(companyData) {
 // =============================================================================
 
 /**
- * Fetch all ledgers for the current company (for Autocomplete)
+ * Fetch all ledgers for the current company (for Autocomplete in Vouchers)
  */
 export async function getLedgers() {
     if (!state.currentCompany) return [];
@@ -66,6 +65,47 @@ export async function getLedgers() {
         .select('id, name, group_id, opening_balance')
         .eq('company_id', state.currentCompany.id)
         .order('name');
+
+    if (error) throw error;
+    return data;
+}
+
+/**
+ * Fetch all groups for the dropdown (e.g. "Current Assets", "Indirect Expenses")
+ * Used in Ledger Creation Screen
+ */
+export async function getGroups() {
+    if (!state.currentCompany) return [];
+
+    const { data, error } = await supabase
+        .from('groups')
+        .select('id, name, primary_group, parent_id')
+        .eq('company_id', state.currentCompany.id)
+        .order('name');
+
+    if (error) throw error;
+    return data;
+}
+
+/**
+ * Create a new Ledger (Master)
+ */
+export async function createLedger(ledgerData) {
+    if (!state.currentCompany) throw new Error("No company selected");
+
+    const { data, error } = await supabase
+        .from('ledgers')
+        .insert({
+            company_id: state.currentCompany.id,
+            name: ledgerData.name,
+            group_id: ledgerData.groupId,
+            opening_balance: ledgerData.openingBalance || 0,
+            opening_balance_type: ledgerData.openingType || 'Dr',
+            mailing_name: ledgerData.mailingName || null,
+            gst_number: ledgerData.gst || null
+        })
+        .select()
+        .single();
 
     if (error) throw error;
     return data;
@@ -83,7 +123,6 @@ export async function saveVoucher(voucherData) {
     if (!state.currentCompany) throw new Error("No company selected");
 
     // 1. Generate Voucher Number (Simple Auto-Increment Simulation)
-    // In a real app, you'd query the max voucher number for this type.
     const vNum = `${voucherData.type.toUpperCase().substring(0, 3)}-${Date.now().toString().slice(-6)}`;
 
     // 2. Insert Header
@@ -105,7 +144,7 @@ export async function saveVoucher(voucherData) {
     const entryRows = voucherData.entries.map(entry => ({
         voucher_id: voucher.id,
         ledger_id: entry.ledger_id,
-        amount: Math.abs(entry.amount), // Ensure positive
+        amount: Math.abs(entry.amount),
         type: entry.type // 'Dr' or 'Cr'
     }));
 
@@ -129,8 +168,6 @@ export async function saveVoucher(voucherData) {
 export async function getDayBook() {
     if (!state.currentCompany) return [];
 
-    // We join voucher_entries to get the total amount for display
-    // Note: This is a simplified fetch.
     const { data, error } = await supabase
         .from('vouchers')
         .select(`
@@ -145,7 +182,7 @@ export async function getDayBook() {
 
     // Process data to calculate total amount per voucher
     return data.map(v => {
-        // Total amount is Sum of Debits (since Dr=Cr, we just sum all and divide by 2, or filter)
+        // Total amount is Sum of Debits (since Dr=Cr, we just sum all and divide by 2)
         const total = v.voucher_entries.reduce((sum, entry) => sum + entry.amount, 0) / 2;
         return { ...v, total_amount: total };
     });
@@ -170,11 +207,9 @@ export async function getDashboardStats() {
         .limit(5);
 
     // 2. Get Cash Balance
-    // We need to find ledgers named 'Cash' and sum their entries
     const cashBal = await getLedgerBalanceByName('Cash');
     
-    // 3. Get Bank Balance (Assuming a ledger group logic, but simpler here: name contains 'Bank')
-    // In a real app, we check the Group ID = 'Bank Accounts'
+    // 3. Get Bank Balance
     const bankBal = await getGroupBalanceByName('Bank Accounts');
 
     // 4. Get Sales for this month
@@ -202,7 +237,6 @@ export async function getDashboardStats() {
  * Helper: Calculate Balance for a specific Ledger Name
  */
 async function getLedgerBalanceByName(nameFragment) {
-    // Find ledger ID first
     const { data: ledgers } = await supabase
         .from('ledgers')
         .select('id, opening_balance, opening_balance_type')
@@ -216,7 +250,6 @@ async function getLedgerBalanceByName(nameFragment) {
     for (const ledger of ledgers) {
         let bal = ledger.opening_balance_type === 'Dr' ? ledger.opening_balance : -ledger.opening_balance;
 
-        // Fetch transactions
         const { data: entries } = await supabase
             .from('voucher_entries')
             .select('amount, type')
@@ -255,8 +288,6 @@ async function getGroupBalanceByName(groupName) {
 
     if (!ledgers || ledgers.length === 0) return 0;
 
-    let totalBalance = 0;
-
     // 3. Sum entries
     const ledgerIds = ledgers.map(l => l.id);
     const { data: entries } = await supabase
@@ -264,6 +295,7 @@ async function getGroupBalanceByName(groupName) {
         .select('amount, type')
         .in('ledger_id', ledgerIds);
 
+    let totalBalance = 0;
     if (entries) {
         entries.forEach(e => {
             if (e.type === 'Dr') totalBalance += e.amount;
@@ -271,41 +303,5 @@ async function getGroupBalanceByName(groupName) {
         });
     }
 
-    export async function getGroups() {
-    if (!state.currentCompany) return [];
-
-    const { data, error } = await supabase
-        .from('groups')
-        .select('id, name, primary_group, parent_id')
-        .eq('company_id', state.currentCompany.id)
-        .order('name');
-
-    if (error) throw error;
-    return data;
-}
-
-/**
- * Create a new Ledger (Master)
- */
-export async function createLedger(ledgerData) {
-    if (!state.currentCompany) throw new Error("No company selected");
-
-    const { data, error } = await supabase
-        .from('ledgers')
-        .insert({
-            company_id: state.currentCompany.id,
-            name: ledgerData.name,
-            group_id: ledgerData.groupId,
-            opening_balance: ledgerData.openingBalance || 0,
-            opening_balance_type: ledgerData.openingType || 'Dr',
-            mailing_name: ledgerData.mailingName, // Optional
-            gst_number: ledgerData.gst // Optional
-        })
-        .select()
-        .single();
-
-    if (error) throw error;
-    return data;
-}
     return totalBalance;
 }
