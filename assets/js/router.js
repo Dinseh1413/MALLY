@@ -9,8 +9,14 @@ import * as Reports from './reports.js';
 const routes = {
     'dashboard': loadDashboard,
     'voucher': loadVoucherEntry,
-    'voucher-view': loadVoucherView, // <--- New Route for Viewing/Printing
+    'voucher-view': loadVoucherView,
+    
+    // Masters
     'ledger-create': loadLedgerCreate,
+    'unit-create': loadUnitCreate,       // <--- New
+    'item-create': loadItemCreate,       // <--- New
+    
+    // Reports
     'balance-sheet': loadBalanceSheet,
     'profit-loss': loadProfitLoss,
     'trial-balance': loadTrialBalance,
@@ -24,7 +30,7 @@ let currentRoute = 'dashboard';
 // =============================================================================
 
 export async function navigateTo(routeName) {
-    // 1. Security Check: Must have a selected company (unless just loading dashboard)
+    // 1. Security Check
     if (routeName !== 'dashboard' && !state.currentCompany) {
         showToast('Please select or create a company first.', 'error');
         const modal = document.getElementById('modal-company');
@@ -40,7 +46,7 @@ export async function navigateTo(routeName) {
         }
     });
 
-    // 3. Clear current view & Show Loader
+    // 3. Clear & Loader
     const appView = document.getElementById('app-view');
     appView.innerHTML = '<div class="flex items-center justify-center h-full"><div class="loader-green"></div></div>';
 
@@ -48,6 +54,8 @@ export async function navigateTo(routeName) {
     const titleMap = {
         'dashboard': 'Gateway of Mally',
         'ledger-create': 'Ledger Creation',
+        'unit-create': 'Unit Creation',
+        'item-create': 'Stock Item Creation',
         'voucher': 'Accounting Voucher Creation',
         'voucher-view': 'Voucher Display',
         'balance-sheet': 'Balance Sheet',
@@ -57,7 +65,7 @@ export async function navigateTo(routeName) {
     };
     document.getElementById('page-title').textContent = titleMap[routeName] || 'Mally';
 
-    // 5. Load the specific View Logic
+    // 5. Load Logic
     setTimeout(async () => {
         try {
             if (routes[routeName]) {
@@ -94,26 +102,44 @@ async function loadDashboard(container) {
     }
 }
 
+// --- MASTERS ---
+
 async function loadLedgerCreate(container) {
     const groups = await Accounting.getGroups();
     container.innerHTML = UI.renderLedgerForm();
     UI.initLedgerFormLogic(groups);
 }
 
+async function loadUnitCreate(container) {
+    container.innerHTML = UI.renderUnitForm();
+    UI.initUnitFormLogic();
+}
+
+async function loadItemCreate(container) {
+    const units = await Accounting.getUnits();
+    container.innerHTML = UI.renderStockItemForm();
+    UI.initStockItemFormLogic(units);
+}
+
+// --- TRANSACTIONS ---
+
 async function loadVoucherEntry(container) {
-    const ledgers = await Accounting.getLedgers();
+    // We now need BOTH Ledgers and Stock Items for the hybrid voucher
+    const [ledgers, items] = await Promise.all([
+        Accounting.getLedgers(),
+        Accounting.getStockItems()
+    ]);
+    
     container.innerHTML = UI.renderVoucherForm();
-    UI.initVoucherFormLogic(ledgers);
+    UI.initVoucherFormLogic(ledgers, items);
 }
 
 async function loadVoucherView(container) {
-    // Check if we have an active ID to view
     if (!state.activeVoucherId) {
         showToast("No voucher selected", "error");
         navigateTo('daybook');
         return;
     }
-
     try {
         const voucher = await Accounting.getVoucher(state.activeVoucherId);
         container.innerHTML = UI.renderVoucherView(voucher);
@@ -122,6 +148,8 @@ async function loadVoucherView(container) {
         container.innerHTML = `<div class="text-red-500">Error loading voucher: ${err.message}</div>`;
     }
 }
+
+// --- REPORTS ---
 
 async function loadBalanceSheet(container) {
     const data = await Reports.generateBalanceSheet();
@@ -144,22 +172,19 @@ async function loadDayBook(container) {
 }
 
 // =============================================================================
-// 4. GLOBAL HELPER FUNCTIONS (Window Scope)
+// 4. GLOBAL HELPER FUNCTIONS
 // =============================================================================
 
-// Called when clicking a row in Day Book
 window.openVoucher = (id) => {
-    state.activeVoucherId = id; // Store ID in global state
+    state.activeVoucherId = id;
     navigateTo('voucher-view');
 };
 
-// Called from Voucher View screen
 window.deleteCurrentVoucher = async (id) => {
     if (confirm('Are you sure you want to delete this voucher? This cannot be undone.')) {
         try {
             await Accounting.deleteVoucher(id);
             showToast('Voucher deleted successfully', 'success');
-            // Clear history and go back
             state.activeVoucherId = null;
             navigateTo('daybook');
         } catch (err) {
@@ -183,20 +208,19 @@ async function initApp() {
         return;
     }
 
-    // 2. Set User State
     state.user = session.user;
     
-    // Update Sidebar User Info
+    // UI Updates
     const emailEl = document.getElementById('user-email');
     const initEl = document.getElementById('user-initials');
     if (emailEl) emailEl.textContent = session.user.email;
     if (initEl) initEl.textContent = session.user.email.charAt(0).toUpperCase();
 
-    // 3. Load Companies
+    // 2. Load Companies
     try {
         const companies = await Accounting.getCompanies();
         
-        // Populate Company Modal List
+        // Populate Company Modal
         const listContainer = document.getElementById('company-list-container');
         if (listContainer) {
             if (companies.length === 0) {
@@ -205,13 +229,16 @@ async function initApp() {
                 listContainer.innerHTML = companies.map(c => `
                     <button onclick="window.selectCompany('${c.id}')" class="w-full text-left p-3 hover:bg-emerald-50 border-b border-gray-100 flex justify-between group">
                         <span class="font-medium text-gray-700 group-hover:text-emerald-700">${c.name}</span>
-                        <span class="text-xs text-gray-400 self-center">${c.financial_year_start}</span>
+                        <div class="flex flex-col text-right">
+                             <span class="text-xs text-gray-400">FY: ${c.financial_year_start}</span>
+                             <span class="text-[10px] bg-gray-100 text-gray-500 px-1 rounded mt-1 w-fit self-end">${c.state_code || '-'}</span>
+                        </div>
                     </button>
                 `).join('');
             }
         }
 
-        // 4. Select Default Company
+        // 3. Select Default
         if (companies.length > 0) {
             const lastId = localStorage.getItem('mally_last_company_id');
             const target = companies.find(c => c.id === lastId) || companies[0];
@@ -225,14 +252,12 @@ async function initApp() {
         showToast("Failed to load companies", "error");
     }
 
-    // 5. Hide Loader & Render Dashboard
     const loader = document.getElementById('global-loader');
     if (loader) loader.classList.add('hidden');
     
     navigateTo('dashboard');
 }
 
-// Helper to switch company globally
 window.selectCompany = async (companyIdOrObj) => {
     let company;
     if (typeof companyIdOrObj === 'string') {
@@ -246,14 +271,10 @@ window.selectCompany = async (companyIdOrObj) => {
         state.currentCompany = company;
         localStorage.setItem('mally_last_company_id', company.id);
         
-        // Update Sidebar UI
         document.getElementById('sidebar-company-name').textContent = company.name;
         document.getElementById('sidebar-fy').textContent = `FY: ${company.financial_year_start}`;
         
-        // Close Modal
         document.getElementById('modal-company').close();
-        
-        // Reload Dashboard
         navigateTo('dashboard');
         showToast(`Switched to ${company.name}`, 'success');
     }
@@ -264,19 +285,15 @@ window.selectCompany = async (companyIdOrObj) => {
 // =============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Run Init Logic
     initApp();
 
-    // 2. Navigation Clicks
     document.body.addEventListener('click', (e) => {
         const navItem = e.target.closest('.nav-item');
         if (navItem) {
-            const route = navItem.dataset.route;
-            navigateTo(route);
+            navigateTo(navItem.dataset.route);
         }
     });
     
-    // 3. Create Company Form Handler
     const createForm = document.getElementById('form-create-company');
     if (createForm) {
         createForm.addEventListener('submit', async (e) => {
@@ -305,7 +322,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 4. Modal Triggers
     const btnSwitch = document.getElementById('btn-switch-company');
     if (btnSwitch) btnSwitch.addEventListener('click', () => document.getElementById('modal-company').showModal());
 
