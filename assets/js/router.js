@@ -11,10 +11,16 @@ const routes = {
     'voucher': loadVoucherEntry,
     'voucher-view': loadVoucherView,
     
-    // Masters
+    // Masters - Creation
     'ledger-create': loadLedgerCreate,
-    'unit-create': loadUnitCreate,       // <--- New
-    'item-create': loadItemCreate,       // <--- New
+    'unit-create': loadUnitCreate,
+    'item-create': loadItemCreate,
+    
+    // Masters - Management (New)
+    'master-list': loadMasterList,
+    'ledger-edit': loadLedgerEdit,
+    'unit-edit': loadUnitEdit,
+    'item-edit': loadItemEdit,
     
     // Reports
     'balance-sheet': loadBalanceSheet,
@@ -56,6 +62,10 @@ export async function navigateTo(routeName) {
         'ledger-create': 'Ledger Creation',
         'unit-create': 'Unit Creation',
         'item-create': 'Stock Item Creation',
+        'master-list': 'List of Masters',
+        'ledger-edit': 'Ledger Alteration',
+        'unit-edit': 'Unit Alteration',
+        'item-edit': 'Stock Item Alteration',
         'voucher': 'Accounting Voucher Creation',
         'voucher-view': 'Voucher Display',
         'balance-sheet': 'Balance Sheet',
@@ -102,29 +112,111 @@ async function loadDashboard(container) {
     }
 }
 
-// --- MASTERS ---
+// --- MASTERS: CREATION ---
 
 async function loadLedgerCreate(container) {
+    state.editId = null; // Ensure fresh create
     const groups = await Accounting.getGroups();
     container.innerHTML = UI.renderLedgerForm();
     UI.initLedgerFormLogic(groups);
 }
 
 async function loadUnitCreate(container) {
+    state.editId = null;
     container.innerHTML = UI.renderUnitForm();
     UI.initUnitFormLogic();
 }
 
 async function loadItemCreate(container) {
+    state.editId = null;
     const units = await Accounting.getUnits();
     container.innerHTML = UI.renderStockItemForm();
     UI.initStockItemFormLogic(units);
 }
 
+// --- MASTERS: MANAGEMENT (LIST & EDIT) ---
+
+async function loadMasterList(container) {
+    try {
+        const [ledgers, items, units] = await Promise.all([
+            Accounting.getLedgers(),
+            Accounting.getStockItems(),
+            Accounting.getUnits()
+        ]);
+        container.innerHTML = UI.renderMasterList(ledgers, items, units);
+    } catch (err) {
+        container.innerHTML = `<div class="text-red-500">Error loading masters: ${err.message}</div>`;
+    }
+}
+
+async function loadLedgerEdit(container) {
+    if (!state.editId) return navigateTo('master-list');
+
+    try {
+        // Fetch Ledger details + All Groups (for dropdown)
+        const [groups, ledger] = await Promise.all([
+            Accounting.getGroups(),
+            Accounting.getLedger(state.editId)
+        ]);
+
+        // Helper: Find group name to pre-fill the search input
+        const groupObj = groups.find(g => g.id === ledger.group_id);
+        ledger.group_name_temp = groupObj ? groupObj.name : '';
+
+        container.innerHTML = UI.renderLedgerForm(ledger);
+        UI.initLedgerFormLogic(groups);
+    } catch (err) {
+        showToast(err.message, 'error');
+        navigateTo('master-list');
+    }
+}
+
+async function loadUnitEdit(container) {
+    if (!state.editId) return navigateTo('master-list');
+    try {
+        // Fetch only units list isn't enough, we need the specific unit by ID.
+        // Optimization: In a real app we might fetch just one, here we filter from list or fetch all.
+        // Let's rely on the list fetch for simplicity or add getUnit(id) to accounting.
+        // *Correction*: We added getUnit/getLedger specific functions in Accounting.js Step 2.
+        
+        // Since we didn't explicitly add `getUnit(id)` in the previous Accounting.js snippet (I added getLedger and getStockItem), 
+        // let's grab it from the list for now to avoid breaking if the user didn't add that specific function.
+        // actually, looking back at my generated accounting.js, I did not add getUnit(id). 
+        // I will use getUnits() and find it client side to be safe.
+        
+        const units = await Accounting.getUnits();
+        const unit = units.find(u => u.id === state.editId);
+        
+        if(unit) {
+            container.innerHTML = UI.renderUnitForm(unit);
+            UI.initUnitFormLogic();
+        } else {
+            throw new Error("Unit not found");
+        }
+    } catch (err) {
+        showToast(err.message, 'error');
+        navigateTo('master-list');
+    }
+}
+
+async function loadItemEdit(container) {
+    if (!state.editId) return navigateTo('master-list');
+    try {
+        const [units, item] = await Promise.all([
+            Accounting.getUnits(),
+            Accounting.getStockItem(state.editId)
+        ]);
+        container.innerHTML = UI.renderStockItemForm(item);
+        UI.initStockItemFormLogic(units);
+    } catch (err) {
+        showToast(err.message, 'error');
+        navigateTo('master-list');
+    }
+}
+
 // --- TRANSACTIONS ---
 
 async function loadVoucherEntry(container) {
-    // We now need BOTH Ledgers and Stock Items for the hybrid voucher
     const [ledgers, items] = await Promise.all([
         Accounting.getLedgers(),
         Accounting.getStockItems()
@@ -190,6 +282,31 @@ window.deleteCurrentVoucher = async (id) => {
         } catch (err) {
             showToast(err.message, 'error');
         }
+    }
+};
+
+// NEW: Global Edit/Delete handlers for Masters
+window.editMaster = (type, id) => {
+    state.editId = id;
+    navigateTo(`${type}-edit`);
+};
+
+window.deleteMaster = async (type, id) => {
+    if (!confirm('Are you sure you want to delete this master? If it has transactions, this will fail.')) return;
+
+    try {
+        if (type === 'ledger') await Accounting.deleteLedger(id);
+        if (type === 'unit') await Accounting.deleteUnit(id);
+        if (type === 'item') await Accounting.deleteStockItem(id);
+        
+        showToast('Deleted successfully', 'success');
+        
+        // Refresh the current view (Master List)
+        const appView = document.getElementById('app-view');
+        loadMasterList(appView);
+    } catch (err) {
+        console.error(err);
+        showToast('Cannot delete: This master is likely used in vouchers.', 'error');
     }
 };
 
