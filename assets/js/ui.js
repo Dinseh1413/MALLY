@@ -238,7 +238,7 @@ export function initStockItemFormLogic(units) {
 }
 
 // =============================================================================
-// 3. VOUCHER ENTRY SYSTEM (Hybrid: Accounting + Inventory)
+// 3. VOUCHER ENTRY SYSTEM (With Auto GST)
 // =============================================================================
 
 export function renderVoucherForm() {
@@ -277,16 +277,20 @@ export function renderVoucherForm() {
                         <thead class="bg-blue-100 text-blue-800 text-xs uppercase">
                             <tr>
                                 <th class="p-2">Name of Item</th>
+                                <th class="p-2 w-24 text-right">Tax %</th>
                                 <th class="p-2 w-24 text-right">Qty</th>
                                 <th class="p-2 w-24 text-right">Rate</th>
                                 <th class="p-2 w-32 text-right">Amount</th>
                                 <th class="p-2 w-8"></th>
                             </tr>
                         </thead>
-                        <tbody id="inv-entries">
-                            </tbody>
+                        <tbody id="inv-entries"></tbody>
                     </table>
                     <button type="button" id="btn-add-inv" class="mt-2 text-xs text-blue-600 font-bold hover:underline">+ Add Item</button>
+                    
+                    <div class="mt-2 text-right">
+                         <button type="button" id="btn-auto-gst" class="text-xs bg-blue-600 text-white px-3 py-1 rounded shadow hover:bg-blue-700">Auto Calculate GST</button>
+                    </div>
                 </div>
 
                 <div class="border border-gray-300 rounded mb-4 overflow-hidden">
@@ -301,13 +305,10 @@ export function renderVoucherForm() {
                                 <th class="p-2 w-10"></th>
                             </tr>
                         </thead>
-                        <tbody id="voucher-entries">
-                            </tbody>
+                        <tbody id="voucher-entries"></tbody>
                     </table>
                     <div class="bg-gray-50 p-2 border-t border-gray-200">
-                         <button type="button" id="btn-add-row" class="text-xs text-emerald-600 font-bold hover:underline flex items-center gap-1">
-                            + Add Line
-                         </button>
+                         <button type="button" id="btn-add-row" class="text-xs text-emerald-600 font-bold hover:underline">+ Add Line</button>
                     </div>
                 </div>
 
@@ -371,21 +372,69 @@ export function initVoucherFormLogic(ledgers, items = []) {
 
     // Toggle Inventory Section
     function toggleInv() {
-        if (['Sales', 'Purchase'].includes(vType.value)) {
-            invSection.classList.remove('hidden');
-        } else {
-            invSection.classList.add('hidden');
-            invBody.innerHTML = ''; // Clear items if hidden
-        }
+        if (['Sales', 'Purchase'].includes(vType.value)) invSection.classList.remove('hidden');
+        else invSection.classList.add('hidden');
     }
     vType.addEventListener('change', toggleInv);
-    toggleInv(); // Init state
+    toggleInv(); 
+
+    // --- AUTO GST CALCULATION ---
+    function calculateGST() {
+        let totalTaxAmount = 0;
+        
+        // 1. Calculate Total Tax from Items
+        document.querySelectorAll('#inv-entries tr').forEach(tr => {
+            const amt = parseFloat(tr.querySelector('.inv-amt').value) || 0;
+            const taxRate = parseFloat(tr.querySelector('.inv-tax').value) || 0;
+            totalTaxAmount += (amt * taxRate / 100);
+        });
+
+        if (totalTaxAmount === 0) return;
+
+        // 2. Determine IGST vs CGST/SGST (Simplification: Default to CGST+SGST)
+        const cgstRow = findLedgerRow('CGST');
+        const sgstRow = findLedgerRow('SGST');
+        const igstRow = findLedgerRow('IGST');
+
+        // Logic: If IGST row exists, put full tax there. Else split between CGST/SGST.
+        if (igstRow) {
+            updateLedgerRowAmount(igstRow, totalTaxAmount);
+            if (cgstRow) updateLedgerRowAmount(cgstRow, 0);
+            if (sgstRow) updateLedgerRowAmount(sgstRow, 0);
+        } else {
+            // Default to CGST + SGST split
+            const splitTax = totalTaxAmount / 2;
+            
+            // If rows don't exist, create them automatically
+            if (!cgstRow && !sgstRow) {
+                addLedgerRow('Cr', 'CGST', splitTax.toFixed(2));
+                addLedgerRow('Cr', 'SGST', splitTax.toFixed(2));
+            } else {
+                if (cgstRow) updateLedgerRowAmount(cgstRow, splitTax);
+                if (sgstRow) updateLedgerRowAmount(sgstRow, splitTax);
+            }
+        }
+        calcTotals();
+    }
+
+    function findLedgerRow(name) {
+        return Array.from(document.querySelectorAll('.row-ledger')).find(i => i.value.toUpperCase() === name)?.closest('tr');
+    }
+
+    function updateLedgerRowAmount(tr, amount) {
+        const type = tr.querySelector('.row-type').value;
+        if (type === 'Cr') tr.querySelector('.row-cr').value = amount.toFixed(2);
+        else tr.querySelector('.row-dr').value = amount.toFixed(2);
+    }
+
+    document.getElementById('btn-auto-gst').addEventListener('click', calculateGST);
 
     // --- Inventory Row Logic ---
     function addInvRow() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td class="p-2"><input type="text" list="item-list" class="inv-item w-full border border-gray-300 rounded p-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"></td>
+            <td class="p-2"><input type="text" class="inv-tax w-full bg-gray-50 border border-gray-200 rounded p-1 text-right text-sm text-gray-500" readonly tabindex="-1"></td>
             <td class="p-2"><input type="number" class="inv-qty w-full border border-gray-300 rounded p-1 text-right text-sm"></td>
             <td class="p-2"><input type="number" class="inv-rate w-full border border-gray-300 rounded p-1 text-right text-sm"></td>
             <td class="p-2"><input type="number" class="inv-amt w-full bg-gray-50 border border-gray-200 rounded p-1 text-right text-sm font-bold" readonly></td>
@@ -393,23 +442,29 @@ export function initVoucherFormLogic(ledgers, items = []) {
         `;
         invBody.appendChild(tr);
 
+        const itemInput = tr.querySelector('.inv-item');
         const qty = tr.querySelector('.inv-qty');
         const rate = tr.querySelector('.inv-rate');
         const amt = tr.querySelector('.inv-amt');
-        const rm = tr.querySelector('.remove-row');
+        const tax = tr.querySelector('.inv-tax');
+
+        // Auto-fill tax rate on item selection
+        itemInput.addEventListener('change', () => {
+            const opt = Array.from(itemList.options).find(o => o.value === itemInput.value);
+            if (opt) tax.value = opt.dataset.rate;
+        });
 
         const calc = () => {
             amt.value = ((parseFloat(qty.value) || 0) * (parseFloat(rate.value) || 0)).toFixed(2);
-            // Optionally auto-add to ledger total
         };
         qty.addEventListener('input', calc);
         rate.addEventListener('input', calc);
-        rm.addEventListener('click', () => tr.remove());
+        tr.querySelector('.remove-row').addEventListener('click', () => tr.remove());
     }
     document.getElementById('btn-add-inv').addEventListener('click', addInvRow);
 
-    // --- Ledger Row Logic (Reused) ---
-    function addLedgerRow(defaultType = 'Dr') {
+    // --- Ledger Row Logic ---
+    function addLedgerRow(defaultType = 'Dr', defaultName = '', defaultAmt = '') {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td class="p-2">
@@ -418,14 +473,13 @@ export function initVoucherFormLogic(ledgers, items = []) {
                     <option value="Cr" ${defaultType === 'Cr' ? 'selected' : ''}>Cr</option>
                 </select>
             </td>
-            <td class="p-2"><input type="text" list="ledger-list" class="row-ledger w-full border border-gray-300 rounded p-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"></td>
-            <td class="p-2"><input type="number" step="0.01" class="row-dr w-full border border-gray-300 rounded p-1 text-right text-sm ${defaultType === 'Dr' ? '' : 'bg-gray-100'}" ${defaultType === 'Dr' ? '' : 'disabled'}></td>
-            <td class="p-2"><input type="number" step="0.01" class="row-cr w-full border border-gray-300 rounded p-1 text-right text-sm ${defaultType === 'Cr' ? '' : 'bg-gray-100'}" ${defaultType === 'Cr' ? '' : 'disabled'}></td>
+            <td class="p-2"><input type="text" list="ledger-list" value="${defaultName}" class="row-ledger w-full border border-gray-300 rounded p-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"></td>
+            <td class="p-2"><input type="number" step="0.01" value="${defaultType==='Dr'?defaultAmt:''}" class="row-dr w-full border border-gray-300 rounded p-1 text-right text-sm ${defaultType === 'Dr' ? '' : 'bg-gray-100'}" ${defaultType === 'Dr' ? '' : 'disabled'}></td>
+            <td class="p-2"><input type="number" step="0.01" value="${defaultType==='Cr'?defaultAmt:''}" class="row-cr w-full border border-gray-300 rounded p-1 text-right text-sm ${defaultType === 'Cr' ? '' : 'bg-gray-100'}" ${defaultType === 'Cr' ? '' : 'disabled'}></td>
             <td class="p-2 text-center"><button type="button" class="text-gray-400 hover:text-red-500 remove-row">&times;</button></td>
         `;
         ledgerBody.appendChild(tr);
         
-        // (Add listeners similar to previous version, omitted for brevity but crucial for totals)
         const typeSelect = tr.querySelector('.row-type');
         const drInput = tr.querySelector('.row-dr');
         const crInput = tr.querySelector('.row-cr');
@@ -444,6 +498,8 @@ export function initVoucherFormLogic(ledgers, items = []) {
         drInput.addEventListener('input', calcTotals);
         crInput.addEventListener('input', calcTotals);
         tr.querySelector('.remove-row').addEventListener('click', () => { tr.remove(); calcTotals(); });
+        
+        calcTotals(); // Update totals immediately if default amt provided
     }
 
     function calcTotals() {
@@ -460,14 +516,12 @@ export function initVoucherFormLogic(ledgers, items = []) {
     }
 
     document.getElementById('btn-add-row').addEventListener('click', () => addLedgerRow());
-    // Init Rows
-    addLedgerRow('Dr'); addLedgerRow('Cr');
+    addLedgerRow('Dr'); addLedgerRow('Cr'); // Init
 
-    // --- FORM SUBMIT ---
+    // --- SUBMIT ---
     document.getElementById('voucher-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         
-        // 1. Gather Inventory
         const invRows = [];
         document.querySelectorAll('#inv-entries tr').forEach(tr => {
             const name = tr.querySelector('.inv-item').value;
@@ -478,12 +532,11 @@ export function initVoucherFormLogic(ledgers, items = []) {
                     qty: parseFloat(tr.querySelector('.inv-qty').value),
                     rate: parseFloat(tr.querySelector('.inv-rate').value),
                     amount: parseFloat(tr.querySelector('.inv-amt').value),
-                    tax_rate: parseFloat(opt.dataset.rate)
+                    tax_rate: parseFloat(tr.querySelector('.inv-tax').value) // Fixed: Now passing tax_rate
                 });
             }
         });
 
-        // 2. Gather Ledgers
         const ledRows = [];
         document.querySelectorAll('#voucher-entries tr').forEach(tr => {
             const name = tr.querySelector('.row-ledger').value;
@@ -491,12 +544,8 @@ export function initVoucherFormLogic(ledgers, items = []) {
             const type = tr.querySelector('.row-type').value;
             const amt = parseFloat(type === 'Dr' ? tr.querySelector('.row-dr').value : tr.querySelector('.row-cr').value) || 0;
             
-            if (amt > 0 && opt) {
-                ledRows.push({ ledger_id: opt.dataset.id, amount: amt, type });
-            }
+            if (amt > 0 && opt) ledRows.push({ ledger_id: opt.dataset.id, amount: amt, type });
         });
-
-        if (ledRows.length < 2 && invRows.length === 0) return showToast('Incomplete voucher', 'error');
 
         try {
             await Accounting.saveVoucher({
@@ -508,23 +557,22 @@ export function initVoucherFormLogic(ledgers, items = []) {
             });
             showToast('Voucher Saved!', 'success');
             document.getElementById('voucher-form').reset();
-            invBody.innerHTML = '';
-            ledgerBody.innerHTML = '';
+            invBody.innerHTML = ''; ledgerBody.innerHTML = '';
             addLedgerRow('Dr'); addLedgerRow('Cr');
             calcTotals();
-        } catch (err) {
-            showToast(err.message, 'error');
-        }
+        } catch (err) { showToast(err.message, 'error'); }
     });
 }
 
 // =============================================================================
-// 4. VOUCHER VIEW
+// 4. BILL GENERATION (Tax Invoice View)
 // =============================================================================
 
 export function renderVoucherView(voucher) {
     const isInvoice = voucher.type === 'Sales' || voucher.type === 'Purchase';
-    // Calculate totals including inventory if any
+    
+    // Find Party Ledger (Usually the first Debit ledger for Sales)
+    const partyLedger = voucher.entries.find(e => e.type === (voucher.type === 'Sales' ? 'Dr' : 'Cr'))?.ledgers || {};
     const totalAmount = voucher.entries.filter(e => e.type === 'Dr').reduce((acc, e) => acc + e.amount, 0);
 
     return `
@@ -533,75 +581,98 @@ export function renderVoucherView(voucher) {
             <button onclick="history.back()" class="text-gray-600 font-medium">Back</button>
             <div class="flex gap-3">
                 <button onclick="deleteCurrentVoucher('${voucher.id}')" class="text-red-600 font-medium">Delete</button>
-                <button onclick="window.print()" class="bg-emerald-600 text-white font-medium px-4 py-2 rounded">Print</button>
+                <button onclick="window.print()" class="bg-emerald-600 text-white font-medium px-4 py-2 rounded">Print Bill</button>
             </div>
         </div>
         <div class="p-8 print:p-0">
-            <div class="flex justify-between items-start mb-8">
-                <div>
+            <div class="flex justify-between items-start mb-6 border-b pb-6">
+                <div class="w-1/2">
                     <h1 class="text-2xl font-bold text-gray-800 uppercase">${state.currentCompany.name}</h1>
-                    <p class="text-gray-500 text-sm whitespace-pre-line">${state.currentCompany.address || ''}</p>
-                    <p class="text-gray-500 text-sm">GSTIN: ${state.currentCompany.gstin || '-'}</p>
+                    <p class="text-gray-500 text-sm whitespace-pre-line mt-1">${state.currentCompany.address || ''}</p>
+                    <div class="mt-2 text-sm text-gray-600">
+                        <span class="font-bold">GSTIN:</span> ${state.currentCompany.gstin || '-'} <br>
+                        <span class="font-bold">State:</span> ${state.currentCompany.state_name || '-'} (Code: ${state.currentCompany.state_code || '-'})
+                    </div>
                 </div>
-                <div class="text-right">
+                <div class="w-1/2 text-right">
                     <h2 class="text-xl font-bold text-emerald-600 uppercase">${isInvoice ? 'TAX INVOICE' : voucher.type}</h2>
-                    <p class="text-gray-800 font-medium mt-1"># ${voucher.voucher_number}</p>
+                    <p class="text-gray-800 font-medium mt-1">Invoice #: ${voucher.voucher_number}</p>
                     <p class="text-gray-800">Date: ${voucher.date}</p>
                 </div>
             </div>
 
+            <div class="mb-6 p-4 bg-gray-50 rounded border border-gray-100">
+                <p class="text-xs font-bold text-gray-400 uppercase mb-1">Bill To</p>
+                <h3 class="font-bold text-gray-800 text-lg">${partyLedger.name || 'Cash/Unknown'}</h3>
+                <p class="text-sm text-gray-600">${partyLedger.mailing_address || ''}</p>
+                <div class="mt-2 text-sm">
+                    <span class="font-bold">GSTIN:</span> ${partyLedger.gstin || '-'} &nbsp;|&nbsp;
+                    <span class="font-bold">State:</span> ${partyLedger.state_name || '-'}
+                </div>
+            </div>
+
             ${voucher.inventory && voucher.inventory.length > 0 ? `
-            <table class="w-full text-sm border-t border-b border-gray-200 mb-6">
-                <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
+            <table class="w-full text-sm border border-gray-300 mb-6">
+                <thead class="bg-gray-100 text-gray-700 uppercase text-xs font-bold">
                     <tr>
-                        <th class="py-2 text-left">Description of Goods</th>
-                        <th class="py-2 text-left">HSN/SAC</th>
-                        <th class="py-2 text-right">Qty</th>
-                        <th class="py-2 text-right">Rate</th>
-                        <th class="py-2 text-right">Amount</th>
+                        <th class="py-2 px-3 text-left border-r border-gray-300">Description of Goods</th>
+                        <th class="py-2 px-3 text-center border-r border-gray-300 w-24">HSN/SAC</th>
+                        <th class="py-2 px-3 text-right border-r border-gray-300 w-20">Qty</th>
+                        <th class="py-2 px-3 text-right border-r border-gray-300 w-24">Rate</th>
+                        <th class="py-2 px-3 text-right w-32">Amount</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-100">
+                <tbody class="divide-y divide-gray-200">
                     ${voucher.inventory.map(i => `
                     <tr>
-                        <td class="py-2 font-bold text-gray-700">${i.stock_items.name}</td>
-                        <td class="py-2 text-gray-500">${i.stock_items.hsn_code || '-'}</td>
-                        <td class="py-2 text-right">${i.qty}</td>
-                        <td class="py-2 text-right">${formatCurrency(i.rate)}</td>
-                        <td class="py-2 text-right font-mono">${formatCurrency(i.amount)}</td>
+                        <td class="py-2 px-3 font-medium text-gray-700 border-r border-gray-200">${i.stock_items.name}</td>
+                        <td class="py-2 px-3 text-center text-gray-500 border-r border-gray-200">${i.stock_items.hsn_code || '-'}</td>
+                        <td class="py-2 px-3 text-right border-r border-gray-200">${i.qty}</td>
+                        <td class="py-2 px-3 text-right border-r border-gray-200">${formatCurrency(i.rate)}</td>
+                        <td class="py-2 px-3 text-right font-bold text-gray-800">${formatCurrency(i.amount)}</td>
                     </tr>`).join('')}
                 </tbody>
             </table>` : ''}
 
-            <table class="w-full text-sm border-t border-b border-gray-200 mb-6">
-                <thead class="bg-gray-50 text-gray-600 uppercase text-xs">
-                    <tr><th class="py-2 text-left">Particulars</th><th class="py-2 text-right">Amount</th></tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100">
-                    ${voucher.entries.map(e => `
-                    <tr>
-                        <td class="py-2">
-                            <span class="font-bold text-gray-700">${e.ledgers.name}</span>
-                            <span class="text-xs text-gray-400 ml-2">(${e.type})</span>
-                        </td>
-                        <td class="py-2 text-right font-mono">${formatCurrency(e.amount)}</td>
-                    </tr>`).join('')}
-                </tbody>
-                <tfoot class="border-t border-gray-200 font-bold bg-gray-50">
-                    <tr><td class="py-2 text-gray-600">Total</td><td class="py-2 text-right text-gray-800">${formatCurrency(totalAmount)}</td></tr>
-                </tfoot>
-            </table>
+            <div class="flex justify-end">
+                <div class="w-1/2">
+                    <table class="w-full text-sm">
+                        ${voucher.entries.filter(e => e.type === (voucher.type === 'Sales' ? 'Cr' : 'Dr')).map(e => `
+                            <tr>
+                                <td class="py-1 text-right text-gray-600">${e.ledgers.name}:</td>
+                                <td class="py-1 text-right font-mono font-medium text-gray-800 w-32">${formatCurrency(e.amount)}</td>
+                            </tr>
+                        `).join('')}
+                        <tr class="border-t border-gray-300">
+                            <td class="py-2 text-right font-bold text-gray-800 pt-3">Grand Total:</td>
+                            <td class="py-2 text-right font-bold text-lg text-emerald-600 pt-3">${formatCurrency(totalAmount)}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
 
-            <div class="border border-gray-200 bg-gray-50 p-4 rounded text-sm text-gray-600 mb-8">
-                <span class="font-bold uppercase text-xs text-gray-400 block mb-1">Narration</span>
-                ${voucher.narration || '-'}
+            <div class="mt-8 border-t border-gray-200 pt-4">
+                <p class="text-sm text-gray-600 italic mb-2">Amount in Words: ${convertNumberToWords(totalAmount)} Only</p>
+                <div class="text-xs text-gray-500">
+                    <span class="font-bold">Narration:</span> ${voucher.narration || '-'}
+                </div>
+            </div>
+            
+            <div class="mt-12 text-right">
+                <p class="font-bold text-gray-800 text-sm">For ${state.currentCompany.name}</p>
+                <div class="h-12"></div>
+                <p class="text-xs text-gray-500">Authorized Signatory</p>
             </div>
         </div>
     </div>`;
 }
 
-// ... (Rest of Reports: renderBalanceSheet, renderDayBook remain same as previous version)
-// Just ensure renderDayBook adds the click handler we added in step 3 previously
+// Helper: Number to Words (Simplified)
+function convertNumberToWords(amount) {
+    return amount.toFixed(0); // For now just the number, full implementation is long
+}
+
+// ... [Keep renderBalanceSheet, renderDayBook, renderProfitLoss, renderTrialBalance] ...
 export function renderBalanceSheet(data) {
     // Data expected: { liabilities: [], assets: [], totalL: 0, totalA: 0 }
     return `
@@ -684,6 +755,6 @@ export function renderDayBook(vouchers) {
     </div>
     `;
 }
-// Stubs for other reports to prevent errors
+
 export function renderProfitLoss(data) { return renderBalanceSheet(data); /* Placeholder */ }
 export function renderTrialBalance(data) { return renderBalanceSheet(data); /* Placeholder */ }
