@@ -1,12 +1,11 @@
-import { state, showToast } from './config.js';
+import { state, showToast, supabase } from './config.js';
 import * as UI from './ui.js';
 import * as Accounting from './accounting.js';
-import * as Reports from './reports.js';
+import { handleLogout } from './auth.js'; // Import auth to ensure session checks logic is available
 
 // =============================================================================
 // 1. ROUTE DEFINITIONS
 // =============================================================================
-// Maps route names to their setup functions
 const routes = {
     'dashboard': loadDashboard,
     'voucher': loadVoucherEntry,
@@ -22,17 +21,10 @@ let currentRoute = 'dashboard';
 // 2. MAIN NAVIGATION CONTROLLER
 // =============================================================================
 
-/**
- * Loads a specific view into the #app-view container
- * @param {string} routeName 
- */
 export async function navigateTo(routeName) {
-    console.log(`Navigating to: ${routeName}`);
-
-    // 1. Security Check: Must have a selected company (unless we are just loading initial dashboard)
+    // 1. Security Check: Must have a selected company (unless just loading dashboard)
     if (routeName !== 'dashboard' && !state.currentCompany) {
         showToast('Please select or create a company first.', 'error');
-        // Open company modal
         const modal = document.getElementById('modal-company');
         if (modal) modal.showModal();
         return;
@@ -62,7 +54,6 @@ export async function navigateTo(routeName) {
     document.getElementById('page-title').textContent = titleMap[routeName] || 'Mally';
 
     // 5. Load the specific View Logic
-    // We use a small timeout to allow the loader to render (better UX)
     setTimeout(async () => {
         try {
             if (routes[routeName]) {
@@ -85,25 +76,24 @@ export async function navigateTo(routeName) {
 async function loadDashboard(container) {
     if (!state.currentCompany) {
         container.innerHTML = UI.renderEmptyDashboard();
-        // Auto open modal
+        // Auto open modal if no company exists
         const modal = document.getElementById('modal-company');
         if (modal && !modal.open) modal.showModal();
         return;
     }
     
-    // Fetch dashboard stats
-    const stats = await Accounting.getDashboardStats();
-    container.innerHTML = UI.renderDashboard(stats);
+    try {
+        const stats = await Accounting.getDashboardStats();
+        container.innerHTML = UI.renderDashboard(stats);
+    } catch (error) {
+        console.error("Dashboard Load Error:", error);
+        container.innerHTML = UI.renderEmptyDashboard(); 
+    }
 }
 
 async function loadVoucherEntry(container) {
-    // 1. Fetch ledgers for autocomplete
     const ledgers = await Accounting.getLedgers();
-    
-    // 2. Render Form
     container.innerHTML = UI.renderVoucherForm();
-    
-    // 3. Initialize Form Logic (Event listeners, calculators)
     UI.initVoucherFormLogic(ledgers);
 }
 
@@ -113,12 +103,15 @@ async function loadBalanceSheet(container) {
 }
 
 async function loadProfitLoss(container) {
-    const data = await Reports.generateProfitLoss();
+    const data = await Reports.generateProfitLoss(); // Ensure Reports is imported if used directly or passed via main import
+    // Note: In previous steps we routed these through UI/Reports imports. 
+    // If Reports isn't imported at top, add: import * as Reports from './reports.js';
     container.innerHTML = UI.renderProfitLoss(data);
 }
 
 async function loadTrialBalance(container) {
-    const data = await Reports.generateTrialBalance();
+    // Ensure Reports is imported
+    const data = await import('./reports.js').then(m => m.generateTrialBalance());
     container.innerHTML = UI.renderTrialBalance(data);
 }
 
@@ -128,24 +121,157 @@ async function loadDayBook(container) {
 }
 
 // =============================================================================
-// 4. INITIALIZATION HANDLERS
+// 4. APP INITIALIZATION (THE FIX)
 // =============================================================================
 
-// Listen for Sidebar clicks
+async function initApp() {
+    console.log("Initializing App...");
+    
+    // 1. Check Session
+    const { data: { session }, error } = await supabase.auth.getSession();
+    
+    if (error || !session) {
+        // Not logged in -> Go to Landing
+        window.location.href = '/index.html';
+        return;
+    }
+
+    // 2. Set User State
+    state.user = session.user;
+    
+    // Update Sidebar User Info
+    const emailEl = document.getElementById('user-email');
+    const initEl = document.getElementById('user-initials');
+    if (emailEl) emailEl.textContent = session.user.email;
+    if (initEl) initEl.textContent = session.user.email.charAt(0).toUpperCase();
+
+    // 3. Load Companies
+    try {
+        const companies = await Accounting.getCompanies();
+        
+        // Populate Company Modal List (in case they want to switch)
+        const listContainer = document.getElementById('company-list-container');
+        if (listContainer) {
+            if (companies.length === 0) {
+                listContainer.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">No companies found.</p>';
+            } else {
+                listContainer.innerHTML = companies.map(c => `
+                    <button onclick="window.selectCompany('${c.id}')" class="w-full text-left p-3 hover:bg-emerald-50 border-b border-gray-100 flex justify-between group">
+                        <span class="font-medium text-gray-700 group-hover:text-emerald-700">${c.name}</span>
+                        <span class="text-xs text-gray-400 self-center">${c.financial_year_start}</span>
+                    </button>
+                `).join('');
+            }
+        }
+
+        // 4. Select Default Company (First one found)
+        if (companies.length > 0) {
+            // Logic: You could save last used company in localStorage
+            const lastId = localStorage.getItem('mally_last_company_id');
+            const target = companies.find(c => c.id === lastId) || companies[0];
+            
+            selectCompany(target);
+        } else {
+            // No companies -> Show Dashboard (which renders "Create Company" state)
+            state.currentCompany = null;
+        }
+
+    } catch (err) {
+        console.error("Init Error:", err);
+        showToast("Failed to load companies", "error");
+    }
+
+    // 5. Hide Loader & Render Dashboard
+    const loader = document.getElementById('global-loader');
+    if (loader) loader.classList.add('hidden'); // This removes the spinner
+    
+    navigateTo('dashboard');
+}
+
+// Helper to switch company globally
+window.selectCompany = async (companyIdOrObj) => {
+    let company;
+    if (typeof companyIdOrObj === 'string') {
+        const companies = await Accounting.getCompanies();
+        company = companies.find(c => c.id === companyIdOrObj);
+    } else {
+        company = companyIdOrObj;
+    }
+
+    if (company) {
+        state.currentCompany = company;
+        localStorage.setItem('mally_last_company_id', company.id);
+        
+        // Update Sidebar UI
+        document.getElementById('sidebar-company-name').textContent = company.name;
+        document.getElementById('sidebar-fy').textContent = `FY: ${company.financial_year_start}`;
+        
+        // Close Modal
+        document.getElementById('modal-company').close();
+        
+        // Reload Dashboard
+        navigateTo('dashboard');
+        showToast(`Switched to ${company.name}`, 'success');
+    }
+};
+
+// =============================================================================
+// 5. EVENT LISTENERS
+// =============================================================================
+
 document.addEventListener('DOMContentLoaded', () => {
+    // 1. Run Init Logic
+    initApp();
+
+    // 2. Navigation Clicks
     document.body.addEventListener('click', (e) => {
-        // Handle Sidebar Navigation
         const navItem = e.target.closest('.nav-item');
         if (navItem) {
             const route = navItem.dataset.route;
             navigateTo(route);
         }
     });
+    
+    // 3. Create Company Form Handler
+    const createForm = document.getElementById('form-create-company');
+    if (createForm) {
+        createForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = createForm.querySelector('button[type="submit"]');
+            const originalText = btn.textContent;
+            btn.textContent = 'Creating...';
+            btn.disabled = true;
 
-    // Handle Browser Back/Forward
-    window.addEventListener('popstate', (e) => {
-        if (e.state && e.state.route) {
-            navigateTo(e.state.route);
-        }
-    });
+            const formData = new FormData(createForm);
+            const data = Object.fromEntries(formData.entries());
+            
+            try {
+                const newCompany = await Accounting.createCompany(data);
+                showToast('Company Created!', 'success');
+                document.getElementById('modal-create-company').close();
+                createForm.reset();
+                // Select the new company immediately
+                selectCompany(newCompany);
+                // Refresh App (Simple way to ensure all lists update)
+                initApp(); 
+            } catch (err) {
+                showToast(err.message, 'error');
+            } finally {
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        });
+    }
+
+    // 4. Modal Triggers
+    const btnSwitch = document.getElementById('btn-switch-company');
+    if (btnSwitch) btnSwitch.addEventListener('click', () => document.getElementById('modal-company').showModal());
+
+    const btnCreateView = document.getElementById('btn-create-company-view');
+    if (btnCreateView) {
+        btnCreateView.addEventListener('click', () => {
+            document.getElementById('modal-company').close();
+            document.getElementById('modal-create-company').showModal();
+        });
+    }
 });
