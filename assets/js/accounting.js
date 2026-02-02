@@ -4,9 +4,6 @@ import { supabase, state, showToast } from './config.js';
 // 1. COMPANY MANAGEMENT
 // =============================================================================
 
-/**
- * Fetch all companies owned by the current user
- */
 export async function getCompanies() {
     const { data, error } = await supabase
         .from('companies')
@@ -18,15 +15,18 @@ export async function getCompanies() {
 }
 
 /**
- * Create a new company and trigger the default ledger setup
+ * Create Company with GST Details
  */
 export async function createCompany(companyData) {
-    // 1. Insert Company
+    // 1. Insert Company with GST Fields
     const { data: company, error } = await supabase
         .from('companies')
         .insert({
             owner_id: state.user.id,
             name: companyData.name,
+            gstin: companyData.gstin,
+            state_name: companyData.state_name,
+            state_code: companyData.state_code, // Critical for GST Calc
             financial_year_start: companyData.fy_start,
             books_beginning_from: companyData.fy_start, 
             currency_symbol: companyData.currency || '₹',
@@ -37,58 +37,39 @@ export async function createCompany(companyData) {
 
     if (error) throw error;
 
-    // 2. Trigger Database Function to create default Groups & Ledgers
+    // 2. Trigger Defaults (Groups, Standard Ledgers, Default Units)
     const { error: rpcError } = await supabase.rpc('setup_company_defaults', {
         new_company_id: company.id
     });
 
     if (rpcError) {
         console.error("Defaults setup failed:", rpcError);
-        showToast("Company created but defaults failed. Check DB logs.", "error");
+        showToast("Company created but defaults failed.", "error");
     }
 
     return company;
 }
 
 // =============================================================================
-// 2. MASTER DATA (Ledgers, Groups)
+// 2. MASTER DATA (Ledgers, Groups, Units, Items)
 // =============================================================================
 
-/**
- * Fetch all ledgers for the current company (for Autocomplete in Vouchers)
- */
-export async function getLedgers() {
-    if (!state.currentCompany) return [];
-
-    const { data, error } = await supabase
-        .from('ledgers')
-        .select('id, name, group_id, opening_balance')
-        .eq('company_id', state.currentCompany.id)
-        .order('name');
-
-    if (error) throw error;
-    return data;
-}
-
-/**
- * Fetch all groups for the dropdown (e.g. "Current Assets", "Indirect Expenses")
- * Used in Ledger Creation Screen
- */
 export async function getGroups() {
     if (!state.currentCompany) return [];
+    const { data, error } = await supabase.from('groups').select('*').eq('company_id', state.currentCompany.id).order('name');
+    if (error) throw error;
+    return data;
+}
 
-    const { data, error } = await supabase
-        .from('groups')
-        .select('id, name, primary_group, parent_id')
-        .eq('company_id', state.currentCompany.id)
-        .order('name');
-
+export async function getLedgers() {
+    if (!state.currentCompany) return [];
+    const { data, error } = await supabase.from('ledgers').select('*').eq('company_id', state.currentCompany.id).order('name');
     if (error) throw error;
     return data;
 }
 
 /**
- * Create a new Ledger (Master)
+ * Create Ledger with GST info
  */
 export async function createLedger(ledgerData) {
     if (!state.currentCompany) throw new Error("No company selected");
@@ -101,8 +82,9 @@ export async function createLedger(ledgerData) {
             group_id: ledgerData.groupId,
             opening_balance: ledgerData.openingBalance || 0,
             opening_balance_type: ledgerData.openingType || 'Dr',
-            mailing_name: ledgerData.mailingName || null,
-            gst_number: ledgerData.gst || null
+            gstin: ledgerData.gst || null,
+            state_name: ledgerData.stateName || null,
+            registration_type: ledgerData.regType || 'Regular'
         })
         .select()
         .single();
@@ -111,21 +93,74 @@ export async function createLedger(ledgerData) {
     return data;
 }
 
+// --- INVENTORY MASTERS ---
+
+export async function getUnits() {
+    if (!state.currentCompany) return [];
+    const { data, error } = await supabase.from('units').select('*').eq('company_id', state.currentCompany.id);
+    if (error) throw error;
+    return data;
+}
+
+export async function createUnit(unitData) {
+    const { data, error } = await supabase
+        .from('units')
+        .insert({
+            company_id: state.currentCompany.id,
+            symbol: unitData.symbol, // e.g. PCS
+            formal_name: unitData.formalName // e.g. Pieces
+        })
+        .select().single();
+    if (error) throw error;
+    return data;
+}
+
+export async function getStockItems() {
+    if (!state.currentCompany) return [];
+    const { data, error } = await supabase
+        .from('stock_items')
+        .select('*, units(symbol)')
+        .eq('company_id', state.currentCompany.id)
+        .order('name');
+    if (error) throw error;
+    return data;
+}
+
+export async function createStockItem(itemData) {
+    const { data, error } = await supabase
+        .from('stock_items')
+        .insert({
+            company_id: state.currentCompany.id,
+            name: itemData.name,
+            unit_id: itemData.unitId,
+            hsn_code: itemData.hsn,
+            tax_rate: itemData.taxRate, // 5, 12, 18, 28
+            type: itemData.type || 'Goods'
+        })
+        .select().single();
+    if (error) throw error;
+    return data;
+}
+
 // =============================================================================
-// 3. TRANSACTION ENGINE (Vouchers)
+// 3. TRANSACTION ENGINE (Vouchers with Inventory)
 // =============================================================================
 
 /**
- * Save a fully validated voucher to the database
- * @param {Object} voucherData { type, date, narration, entries: [{ledger_id, amount, type}] }
+ * Save Voucher with both Ledger Entries and Inventory Entries
+ * @param {Object} voucherData 
+ * { 
+ * type, date, narration, 
+ * entries: [{ledger_id, amount, type}], 
+ * inventory: [{item_id, qty, rate, amount, tax_rate}] 
+ * }
  */
 export async function saveVoucher(voucherData) {
     if (!state.currentCompany) throw new Error("No company selected");
 
-    // 1. Generate Voucher Number (Simple Auto-Increment Simulation)
     const vNum = `${voucherData.type.toUpperCase().substring(0, 3)}-${Date.now().toString().slice(-6)}`;
 
-    // 2. Insert Header
+    // 1. Insert Header
     const { data: voucher, error: vError } = await supabase
         .from('vouchers')
         .insert({
@@ -140,57 +175,45 @@ export async function saveVoucher(voucherData) {
 
     if (vError) throw vError;
 
-    // 3. Prepare Entries
-    const entryRows = voucherData.entries.map(entry => ({
-        voucher_id: voucher.id,
-        ledger_id: entry.ledger_id,
-        amount: Math.abs(entry.amount),
-        type: entry.type // 'Dr' or 'Cr'
-    }));
+    try {
+        // 2. Insert Accounting Entries (Ledgers)
+        const accountRows = voucherData.entries.map(e => ({
+            voucher_id: voucher.id,
+            ledger_id: e.ledger_id,
+            amount: Math.abs(e.amount),
+            type: e.type
+        }));
 
-    // 4. Insert Entries
-    const { error: eError } = await supabase
-        .from('voucher_entries')
-        .insert(entryRows);
+        const { error: accError } = await supabase.from('voucher_entries').insert(accountRows);
+        if (accError) throw accError;
 
-    if (eError) {
-        // Rollback strategy: Delete the voucher header if entries fail
+        // 3. Insert Inventory Entries (Items) - If any
+        if (voucherData.inventory && voucherData.inventory.length > 0) {
+            const inventoryRows = voucherData.inventory.map(i => ({
+                voucher_id: voucher.id,
+                stock_item_id: i.item_id,
+                qty: i.qty,
+                rate: i.rate,
+                amount: i.amount,
+                tax_rate: i.tax_rate || 0
+                // tax amounts (igst/cgst) can be stored here if calculated in UI
+            }));
+
+            const { error: invError } = await supabase.from('inventory_entries').insert(inventoryRows);
+            if (invError) throw invError;
+        }
+
+        return voucher;
+
+    } catch (err) {
+        // Rollback Header if children fail
         await supabase.from('vouchers').delete().eq('id', voucher.id);
-        throw eError;
+        throw err;
     }
-
-    return voucher;
 }
 
 /**
- * Fetch the Day Book (All vouchers for the company)
- */
-export async function getDayBook() {
-    if (!state.currentCompany) return [];
-
-    const { data, error } = await supabase
-        .from('vouchers')
-        .select(`
-            *,
-            voucher_entries ( amount )
-        `)
-        .eq('company_id', state.currentCompany.id)
-        .order('date', { ascending: false })
-        .limit(50);
-
-    if (error) throw error;
-
-    // Process data to calculate total amount per voucher
-    return data.map(v => {
-        // Total amount is Sum of Debits (since Dr=Cr, we just sum all and divide by 2)
-        const total = v.voucher_entries.reduce((sum, entry) => sum + entry.amount, 0) / 2;
-        return { ...v, total_amount: total };
-    });
-}
-
-/**
- * Fetch a single voucher with all its entries
- * (Used for View/Print functionality)
+ * Fetch Voucher Details (Header + Ledgers + Items)
  */
 export async function getVoucher(voucherId) {
     if (!state.currentCompany) return null;
@@ -204,46 +227,58 @@ export async function getVoucher(voucherId) {
 
     if (error) throw error;
 
-    // 2. Fetch Entries with Ledger Names
-    const { data: entries, error: eError } = await supabase
+    // 2. Fetch Ledger Entries
+    const { data: accEntries } = await supabase
         .from('voucher_entries')
-        .select(`
-            *,
-            ledgers ( name )
-        `)
+        .select('*, ledgers(name)')
         .eq('voucher_id', voucherId)
-        .order('type', { ascending: false }); // Dr first, then Cr
+        .order('type', { ascending: false }); // Dr first
 
-    if (eError) throw eError;
+    // 3. Fetch Inventory Entries
+    const { data: invEntries } = await supabase
+        .from('inventory_entries')
+        .select('*, stock_items(name, hsn_code)')
+        .eq('voucher_id', voucherId);
 
-    return { ...voucher, entries };
+    return { 
+        ...voucher, 
+        entries: accEntries, 
+        inventory: invEntries || [] 
+    };
 }
 
-/**
- * Delete a voucher
- */
 export async function deleteVoucher(voucherId) {
-    // RLS policies ensure we can only delete our own company's data
-    const { error } = await supabase
-        .from('vouchers')
-        .delete()
-        .eq('id', voucherId);
-
+    const { error } = await supabase.from('vouchers').delete().eq('id', voucherId);
     if (error) throw error;
     return true;
 }
 
+export async function getDayBook() {
+    if (!state.currentCompany) return [];
+    // Simplified fetch for list view
+    const { data, error } = await supabase
+        .from('vouchers')
+        .select('*, voucher_entries(amount)')
+        .eq('company_id', state.currentCompany.id)
+        .order('date', { ascending: false })
+        .limit(50);
+
+    if (error) throw error;
+
+    return data.map(v => {
+        const total = v.voucher_entries ? v.voucher_entries.reduce((sum, e) => sum + e.amount, 0) / 2 : 0;
+        return { ...v, total_amount: total };
+    });
+}
+
 // =============================================================================
-// 4. ANALYTICS & DASHBOARD
+// 4. DASHBOARD STATS
 // =============================================================================
 
-/**
- * Calculate stats for the dashboard
- */
 export async function getDashboardStats() {
     if (!state.currentCompany) return null;
 
-    // 1. Get Recent Vouchers
+    // Recent Vouchers
     const { data: recent } = await supabase
         .from('vouchers')
         .select('id, voucher_number, date, type')
@@ -251,13 +286,11 @@ export async function getDashboardStats() {
         .order('created_at', { ascending: false })
         .limit(5);
 
-    // 2. Get Cash Balance
+    // Balances
     const cashBal = await getLedgerBalanceByName('Cash');
-    
-    // 3. Get Bank Balance
     const bankBal = await getGroupBalanceByName('Bank Accounts');
 
-    // 4. Get Sales for this month
+    // Sales This Month
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     const { data: salesData } = await supabase
@@ -266,7 +299,7 @@ export async function getDashboardStats() {
         .eq('vouchers.company_id', state.currentCompany.id)
         .eq('vouchers.type', 'Sales')
         .gte('vouchers.date', startOfMonth.toISOString())
-        .eq('type', 'Cr'); // Sales are credited
+        .eq('type', 'Cr');
 
     const salesTotal = salesData ? salesData.reduce((sum, row) => sum + row.amount, 0) : 0;
 
@@ -278,75 +311,32 @@ export async function getDashboardStats() {
     };
 }
 
-/**
- * Helper: Calculate Balance for a specific Ledger Name
- */
+// Helpers
 async function getLedgerBalanceByName(nameFragment) {
-    const { data: ledgers } = await supabase
-        .from('ledgers')
-        .select('id, opening_balance, opening_balance_type')
-        .eq('company_id', state.currentCompany.id)
-        .ilike('name', `%${nameFragment}%`);
-
+    const { data: ledgers } = await supabase.from('ledgers').select('id, opening_balance, opening_balance_type').eq('company_id', state.currentCompany.id).ilike('name', `%${nameFragment}%`);
     if (!ledgers || ledgers.length === 0) return 0;
 
-    let totalBalance = 0;
-
-    for (const ledger of ledgers) {
-        let bal = ledger.opening_balance_type === 'Dr' ? ledger.opening_balance : -ledger.opening_balance;
-
-        const { data: entries } = await supabase
-            .from('voucher_entries')
-            .select('amount, type')
-            .eq('ledger_id', ledger.id);
-        
-        if (entries) {
-            entries.forEach(e => {
-                if (e.type === 'Dr') bal += e.amount;
-                else bal -= e.amount;
-            });
-        }
-        totalBalance += bal;
+    let total = 0;
+    for (const l of ledgers) {
+        let bal = l.opening_balance_type === 'Dr' ? l.opening_balance : -l.opening_balance;
+        const { data: entries } = await supabase.from('voucher_entries').select('amount, type').eq('ledger_id', l.id);
+        if (entries) entries.forEach(e => bal += (e.type === 'Dr' ? e.amount : -e.amount));
+        total += bal;
     }
-    return totalBalance;
+    return total;
 }
 
-/**
- * Helper: Calculate Balance for a specific Group Name (e.g., Bank Accounts)
- */
 async function getGroupBalanceByName(groupName) {
-    // 1. Get Group ID
-    const { data: group } = await supabase
-        .from('groups')
-        .select('id')
-        .eq('company_id', state.currentCompany.id)
-        .eq('name', groupName)
-        .single();
-    
+    const { data: group } = await supabase.from('groups').select('id').eq('company_id', state.currentCompany.id).eq('name', groupName).single();
     if (!group) return 0;
 
-    // 2. Get all Ledgers in this group
-    const { data: ledgers } = await supabase
-        .from('ledgers')
-        .select('id')
-        .eq('group_id', group.id);
-
+    const { data: ledgers } = await supabase.from('ledgers').select('id').eq('group_id', group.id);
     if (!ledgers || ledgers.length === 0) return 0;
-
-    // 3. Sum entries
-    const ledgerIds = ledgers.map(l => l.id);
-    const { data: entries } = await supabase
-        .from('voucher_entries')
-        .select('amount, type')
-        .in('ledger_id', ledgerIds);
-
-    let totalBalance = 0;
-    if (entries) {
-        entries.forEach(e => {
-            if (e.type === 'Dr') totalBalance += e.amount;
-            else totalBalance -= e.amount;
-        });
-    }
-
-    return totalBalance;
+    
+    const ids = ledgers.map(l => l.id);
+    const { data: entries } = await supabase.from('voucher_entries').select('amount, type').in('ledger_id', ids);
+    
+    let total = 0;
+    if (entries) entries.forEach(e => total += (e.type === 'Dr' ? e.amount : -e.amount));
+    return total;
 }
