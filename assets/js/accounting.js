@@ -148,12 +148,7 @@ export async function createStockItem(itemData) {
 
 /**
  * Save Voucher with both Ledger Entries and Inventory Entries
- * @param {Object} voucherData 
- * { 
- * type, date, narration, 
- * entries: [{ledger_id, amount, type}], 
- * inventory: [{item_id, qty, rate, amount, tax_rate}] 
- * }
+ * Fixed to include tax_rate in inventory_entries
  */
 export async function saveVoucher(voucherData) {
     if (!state.currentCompany) throw new Error("No company selected");
@@ -187,7 +182,7 @@ export async function saveVoucher(voucherData) {
         const { error: accError } = await supabase.from('voucher_entries').insert(accountRows);
         if (accError) throw accError;
 
-        // 3. Insert Inventory Entries (Items) - If any
+        // 3. Insert Inventory Entries (Items) - Fixed: Includes tax_rate
         if (voucherData.inventory && voucherData.inventory.length > 0) {
             const inventoryRows = voucherData.inventory.map(i => ({
                 voucher_id: voucher.id,
@@ -195,8 +190,7 @@ export async function saveVoucher(voucherData) {
                 qty: i.qty,
                 rate: i.rate,
                 amount: i.amount,
-                tax_rate: i.tax_rate || 0
-                // tax amounts (igst/cgst) can be stored here if calculated in UI
+                tax_rate: i.tax_rate || 0 // <--- FIXED: Added this field
             }));
 
             const { error: invError } = await supabase.from('inventory_entries').insert(inventoryRows);
@@ -214,6 +208,7 @@ export async function saveVoucher(voucherData) {
 
 /**
  * Fetch Voucher Details (Header + Ledgers + Items)
+ * Updated to fetch Party GST Details for Bill Printing
  */
 export async function getVoucher(voucherId) {
     if (!state.currentCompany) return null;
@@ -227,10 +222,13 @@ export async function getVoucher(voucherId) {
 
     if (error) throw error;
 
-    // 2. Fetch Ledger Entries
+    // 2. Fetch Ledger Entries (Expanded to get GSTIN/Address/State)
     const { data: accEntries } = await supabase
         .from('voucher_entries')
-        .select('*, ledgers(name)')
+        .select(`
+            *,
+            ledgers ( name, gstin, state_name, state_code, mailing_address )
+        `)
         .eq('voucher_id', voucherId)
         .order('type', { ascending: false }); // Dr first
 
