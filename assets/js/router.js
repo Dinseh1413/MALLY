@@ -1,7 +1,7 @@
 import { state, showToast, supabase } from './config.js';
 import * as UI from './ui.js';
 import * as Accounting from './accounting.js';
-import * as Reports from './reports.js'; // Ensure reports.js is imported
+import * as Reports from './reports.js';
 
 // =============================================================================
 // 1. ROUTE DEFINITIONS
@@ -9,7 +9,8 @@ import * as Reports from './reports.js'; // Ensure reports.js is imported
 const routes = {
     'dashboard': loadDashboard,
     'voucher': loadVoucherEntry,
-    'ledger-create': loadLedgerCreate, // <--- New Route for Masters
+    'voucher-view': loadVoucherView, // <--- New Route for Viewing/Printing
+    'ledger-create': loadLedgerCreate,
     'balance-sheet': loadBalanceSheet,
     'profit-loss': loadProfitLoss,
     'trial-balance': loadTrialBalance,
@@ -48,6 +49,7 @@ export async function navigateTo(routeName) {
         'dashboard': 'Gateway of Mally',
         'ledger-create': 'Ledger Creation',
         'voucher': 'Accounting Voucher Creation',
+        'voucher-view': 'Voucher Display',
         'balance-sheet': 'Balance Sheet',
         'profit-loss': 'Profit & Loss A/c',
         'trial-balance': 'Trial Balance',
@@ -93,7 +95,6 @@ async function loadDashboard(container) {
 }
 
 async function loadLedgerCreate(container) {
-    // Fetch Groups first (Assets, Liabilities, etc.) for the dropdown
     const groups = await Accounting.getGroups();
     container.innerHTML = UI.renderLedgerForm();
     UI.initLedgerFormLogic(groups);
@@ -103,6 +104,23 @@ async function loadVoucherEntry(container) {
     const ledgers = await Accounting.getLedgers();
     container.innerHTML = UI.renderVoucherForm();
     UI.initVoucherFormLogic(ledgers);
+}
+
+async function loadVoucherView(container) {
+    // Check if we have an active ID to view
+    if (!state.activeVoucherId) {
+        showToast("No voucher selected", "error");
+        navigateTo('daybook');
+        return;
+    }
+
+    try {
+        const voucher = await Accounting.getVoucher(state.activeVoucherId);
+        container.innerHTML = UI.renderVoucherView(voucher);
+    } catch (err) {
+        console.error(err);
+        container.innerHTML = `<div class="text-red-500">Error loading voucher: ${err.message}</div>`;
+    }
 }
 
 async function loadBalanceSheet(container) {
@@ -126,7 +144,32 @@ async function loadDayBook(container) {
 }
 
 // =============================================================================
-// 4. APP INITIALIZATION
+// 4. GLOBAL HELPER FUNCTIONS (Window Scope)
+// =============================================================================
+
+// Called when clicking a row in Day Book
+window.openVoucher = (id) => {
+    state.activeVoucherId = id; // Store ID in global state
+    navigateTo('voucher-view');
+};
+
+// Called from Voucher View screen
+window.deleteCurrentVoucher = async (id) => {
+    if (confirm('Are you sure you want to delete this voucher? This cannot be undone.')) {
+        try {
+            await Accounting.deleteVoucher(id);
+            showToast('Voucher deleted successfully', 'success');
+            // Clear history and go back
+            state.activeVoucherId = null;
+            navigateTo('daybook');
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
+    }
+};
+
+// =============================================================================
+// 5. APP INITIALIZATION
 // =============================================================================
 
 async function initApp() {
@@ -136,7 +179,6 @@ async function initApp() {
     const { data: { session }, error } = await supabase.auth.getSession();
     
     if (error || !session) {
-        // Not logged in -> Go to Landing
         window.location.href = '/index.html';
         return;
     }
@@ -218,7 +260,7 @@ window.selectCompany = async (companyIdOrObj) => {
 };
 
 // =============================================================================
-// 5. EVENT LISTENERS
+// 6. EVENT LISTENERS
 // =============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
