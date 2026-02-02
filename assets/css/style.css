@@ -1,0 +1,150 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =========================================
+   1. Tally-Like Focus & Inputs
+   ========================================= */
+/* The signature Tally focus: Green border + Light Green background */
+.mally-input:focus, 
+input:focus, 
+select:focus, 
+textarea:focus {
+    outline: 2px solid #10B981; /* Emerald 500 */
+    background-color: #ECFDF5;  /* Emerald 50 */
+    border-color: #10B981;
+    box-shadow: 0 0 0 1px #10B981;
+}
+
+/* Remove default browser outlines */
+*:focus-visible {
+    outline: none;
+}
+
+/* =========================================
+   2. Custom Scrollbars (Clean look)
+   ========================================= */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #D1D5DB; /* Gray 300 */
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #9CA3AF; /* Gray 400 */
+}
+
+/* =========================================
+   3. Table Styles (Professional Grid)
+   ========================================= */
+.report-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem; /* text-sm */
+}
+
+.report-table th, 
+.report-table td {
+    border: 1px solid #E5E7EB; /* Gray 200 */
+    padding: 6px 12px;
+}
+
+.report-table th {
+    background-color: #F9FAFB; /* Gray 50 */
+    font-weight: 600;
+    text-align: left;
+    color: #374151; /* Gray 700 */
+}
+
+.report-table tr:hover {
+    background-color: #F0FDF4; /* Hover row effect */
+}
+
+/* Numeric columns should align right */
+.text-amount {
+    text-align: right;
+    font-family: 'Courier New', Courier, monospace; /* Monospace for alignment */
+    font-weight: 600;
+}
+
+/* =========================================
+   4. Animations
+   ========================================= */
+/* Green Spinning Loader */
+.loader-green {
+    width: 32px;
+    height: 32px;
+    border: 4px solid #ECFDF5;
+    border-top-color: #10B981;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Fade In for Modals/Views */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* =========================================
+   5. Toast Notifications
+   ========================================= */
+.toast {
+    background: white;
+    border-left: 4px solid #3B82F6; /* Default Blue */
+    padding: 12px 16px;
+    border-radius: 4px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #1F2937;
+    animation: slideIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    pointer-events: auto;
+    min-width: 250px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.toast.success { border-left-color: #10B981; }
+.toast.error   { border-left-color: #EF4444; }
+
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+/* =========================================
+   6. Print Styles (For PDF/Printer)
+   ========================================= */
+@media print {
+    aside, header, #toast-container, button {
+        display: none !important;
+    }
+    
+    body, #app-view, main {
+        height: auto;
+        overflow: visible;
+        background: white;
+    }
+
+    .report-table th, .report-table td {
+        border: 1px solid #000; /* Darker borders for print */
+    }
+}
