@@ -271,5 +271,41 @@ async function getGroupBalanceByName(groupName) {
         });
     }
 
+    export async function getGroups() {
+    if (!state.currentCompany) return [];
+
+    const { data, error } = await supabase
+        .from('groups')
+        .select('id, name, primary_group, parent_id')
+        .eq('company_id', state.currentCompany.id)
+        .order('name');
+
+    if (error) throw error;
+    return data;
+}
+
+/**
+ * Create a new Ledger (Master)
+ */
+export async function createLedger(ledgerData) {
+    if (!state.currentCompany) throw new Error("No company selected");
+
+    const { data, error } = await supabase
+        .from('ledgers')
+        .insert({
+            company_id: state.currentCompany.id,
+            name: ledgerData.name,
+            group_id: ledgerData.groupId,
+            opening_balance: ledgerData.openingBalance || 0,
+            opening_balance_type: ledgerData.openingType || 'Dr',
+            mailing_name: ledgerData.mailingName, // Optional
+            gst_number: ledgerData.gst // Optional
+        })
+        .select()
+        .single();
+
+    if (error) throw error;
+    return data;
+}
     return totalBalance;
 }
