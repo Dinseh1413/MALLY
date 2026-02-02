@@ -53,49 +53,131 @@ export function renderDashboard(stats) {
 }
 
 // =============================================================================
-// 2. MASTERS: LEDGER, UNIT, STOCK ITEM
+// 2. MASTER LIST VIEW (View All / Alter / Delete)
+// =============================================================================
+
+export function renderMasterList(ledgers, items, units) {
+    return `
+    <div class="max-w-6xl mx-auto space-y-8">
+        <h1 class="text-xl font-bold text-gray-800 border-b pb-2">Masters Management</h1>
+
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <h3 class="font-bold text-emerald-700">Ledgers</h3>
+                <button onclick="navigateTo('ledger-create')" class="text-xs bg-emerald-600 text-white px-3 py-1 rounded">Create New</button>
+            </div>
+            <div class="max-h-60 overflow-y-auto">
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-gray-50 text-gray-500 sticky top-0"><tr><th class="p-3">Name</th><th class="p-3">Group</th><th class="p-3 text-right">Actions</th></tr></thead>
+                    <tbody class="divide-y divide-gray-100">
+                        ${ledgers.map(l => `
+                            <tr>
+                                <td class="p-3 font-medium">${l.name}</td>
+                                <td class="p-3 text-gray-500 text-xs">${l.groups?.name || '-'}</td>
+                                <td class="p-3 text-right">
+                                    <button onclick="window.editMaster('ledger', '${l.id}')" class="text-blue-600 hover:underline text-xs mr-2">Edit</button>
+                                    <button onclick="window.deleteMaster('ledger', '${l.id}')" class="text-red-500 hover:text-red-700 text-xs">Delete</button>
+                                </td>
+                            </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <h3 class="font-bold text-blue-700">Stock Items</h3>
+                <button onclick="navigateTo('item-create')" class="text-xs bg-blue-600 text-white px-3 py-1 rounded">Create New</button>
+            </div>
+            <div class="max-h-60 overflow-y-auto">
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-gray-50 text-gray-500 sticky top-0"><tr><th class="p-3">Name</th><th class="p-3">Tax</th><th class="p-3 text-right">Actions</th></tr></thead>
+                    <tbody class="divide-y divide-gray-100">
+                        ${items.map(i => `
+                            <tr>
+                                <td class="p-3 font-medium">${i.name}</td>
+                                <td class="p-3 text-gray-500 text-xs">${i.tax_rate}%</td>
+                                <td class="p-3 text-right">
+                                    <button onclick="window.editMaster('item', '${i.id}')" class="text-blue-600 hover:underline text-xs mr-2">Edit</button>
+                                    <button onclick="window.deleteMaster('item', '${i.id}')" class="text-red-500 hover:text-red-700 text-xs">Delete</button>
+                                </td>
+                            </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <h3 class="font-bold text-gray-700">Units</h3>
+                <button onclick="navigateTo('unit-create')" class="text-xs bg-gray-600 text-white px-3 py-1 rounded">Create New</button>
+            </div>
+             <div class="p-4 text-sm">
+                ${units.map(u => `
+                    <div class="flex justify-between border-b border-gray-100 py-2">
+                        <span>${u.symbol} (${u.formal_name})</span>
+                         <div>
+                            <button onclick="window.editMaster('unit', '${u.id}')" class="text-blue-600 hover:underline text-xs mr-2">Edit</button>
+                            <button onclick="window.deleteMaster('unit', '${u.id}')" class="text-red-500 hover:text-red-700 text-xs">Delete</button>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    </div>`;
+}
+
+
+// =============================================================================
+// 3. MASTERS FORMS (Updated for Edit Mode)
 // =============================================================================
 
 // --- LEDGER ---
-export function renderLedgerForm() {
+export function renderLedgerForm(editData = null) {
+    const isEdit = !!editData;
     return `
     <div class="max-w-2xl mx-auto bg-white border border-gray-200 shadow-sm rounded-lg p-6">
-        <h2 class="text-lg font-bold text-gray-700 mb-6 border-b pb-2">Ledger Creation</h2>
+        <h2 class="text-lg font-bold text-gray-700 mb-6 border-b pb-2">${isEdit ? 'Alter Ledger' : 'Ledger Creation'}</h2>
         <form id="ledger-form" class="space-y-5">
+            <input type="hidden" id="l-id" value="${isEdit ? editData.id : ''}">
+            
             <div class="grid grid-cols-12 gap-4 items-center">
                 <label class="col-span-3 text-sm font-bold text-gray-600">Name</label>
-                <div class="col-span-9"><input type="text" id="l-name" required class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none uppercase" placeholder="e.g. HDFC BANK"></div>
+                <div class="col-span-9"><input type="text" id="l-name" value="${isEdit ? editData.name : ''}" required class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none uppercase" placeholder="e.g. HDFC BANK"></div>
             </div>
+            
             <div class="grid grid-cols-12 gap-4 items-center">
                 <label class="col-span-3 text-sm font-bold text-gray-600">Under</label>
                 <div class="col-span-9 relative">
-                    <input type="text" id="l-group-search" list="group-list" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none" placeholder="Select Group...">
+                    <input type="text" id="l-group-search" value="${isEdit ? (editData.group_name_temp || '') : ''}" list="group-list" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none" placeholder="Select Group...">
                     <datalist id="group-list"></datalist>
-                    <input type="hidden" id="l-group-id">
+                    <input type="hidden" id="l-group-id" value="${isEdit ? editData.group_id : ''}">
                 </div>
             </div>
+            
+            ${!isEdit ? `
             <div class="grid grid-cols-12 gap-4 items-center border-t border-gray-100 pt-4">
                 <label class="col-span-3 text-sm font-bold text-gray-600">Op. Balance</label>
                 <div class="col-span-5"><input type="number" id="l-op-bal" step="0.01" value="0" class="w-full border border-gray-300 rounded p-2 text-sm text-right focus:ring-2 ring-emerald-500 outline-none"></div>
                 <div class="col-span-4"><select id="l-op-type" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none"><option value="Dr">Dr</option><option value="Cr">Cr</option></select></div>
-            </div>
-            
+            </div>` : ''}
+
             <div class="grid grid-cols-12 gap-4 items-center pt-2 border-t border-gray-100 mt-2">
                 <label class="col-span-12 text-xs font-bold text-gray-400 uppercase">Statutory Details</label>
             </div>
             <div class="grid grid-cols-12 gap-4 items-center">
                 <label class="col-span-3 text-sm font-bold text-gray-600">GSTIN/UIN</label>
-                <div class="col-span-9"><input type="text" id="l-gst" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none uppercase" placeholder="27ABCDE1234F1Z5"></div>
+                <div class="col-span-9"><input type="text" id="l-gst" value="${isEdit ? (editData.gstin || '') : ''}" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none uppercase" placeholder="27ABCDE1234F1Z5"></div>
             </div>
             <div class="grid grid-cols-12 gap-4 items-center">
                 <label class="col-span-3 text-sm font-bold text-gray-600">State</label>
-                <div class="col-span-5"><input type="text" id="l-state" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none" placeholder="Maharashtra"></div>
+                <div class="col-span-5"><input type="text" id="l-state" value="${isEdit ? (editData.state_name || '') : ''}" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none" placeholder="Maharashtra"></div>
                 <div class="col-span-4"><select id="l-reg-type" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none"><option>Regular</option><option>Unregistered</option><option>Composition</option><option>Consumer</option></select></div>
             </div>
 
             <div class="flex justify-end gap-3 mt-8 pt-4 border-t">
                 <button type="button" onclick="history.back()" class="px-6 py-2 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium">Cancel</button>
-                <button type="submit" class="px-6 py-2 rounded bg-emerald-600 text-white shadow hover:bg-emerald-700 text-sm font-medium">Create Ledger</button>
+                <button type="submit" class="px-6 py-2 rounded bg-emerald-600 text-white shadow hover:bg-emerald-700 text-sm font-medium">${isEdit ? 'Update' : 'Create Ledger'}</button>
             </div>
         </form>
     </div>`;
@@ -122,21 +204,33 @@ export function initLedgerFormLogic(groups) {
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
+        
+        // Handle Edit ID
+        const editId = document.getElementById('l-id').value;
         const name = document.getElementById('l-name').value;
         const groupId = hiddenId.value;
-        const opBal = parseFloat(document.getElementById('l-op-bal').value || 0);
-        const opType = document.getElementById('l-op-type').value;
-        const gst = document.getElementById('l-gst').value;
-        const stateName = document.getElementById('l-state').value;
-        const regType = document.getElementById('l-reg-type').value;
-
+        // Only read op bal if element exists (not in edit mode)
+        const opBal = document.getElementById('l-op-bal') ? parseFloat(document.getElementById('l-op-bal').value) : 0;
+        const opType = document.getElementById('l-op-type') ? document.getElementById('l-op-type').value : 'Dr';
+        
         if (!groupId) return showToast('Please select a valid Group', 'error');
 
         try {
-            await Accounting.createLedger({ name, groupId, openingBalance: opBal, openingType: opType, gst, stateName, regType });
-            showToast(`Ledger '${name}' created!`, 'success');
-            form.reset();
-            document.getElementById('l-name').focus();
+            await Accounting.createLedger({ 
+                id: editId,
+                name, groupId, openingBalance: opBal, openingType: opType, 
+                gst: document.getElementById('l-gst').value, 
+                stateName: document.getElementById('l-state').value, 
+                regType: document.getElementById('l-reg-type').value 
+            });
+            
+            showToast(editId ? 'Ledger Updated' : 'Ledger Created', 'success');
+            
+            if (editId) window.history.back();
+            else {
+                form.reset();
+                document.getElementById('l-name').focus();
+            }
         } catch (err) {
             showToast(err.message, 'error');
         }
@@ -144,22 +238,24 @@ export function initLedgerFormLogic(groups) {
 }
 
 // --- UNIT ---
-export function renderUnitForm() {
+export function renderUnitForm(editData = null) {
+    const isEdit = !!editData;
     return `
     <div class="max-w-md mx-auto bg-white border border-gray-200 shadow-sm rounded-lg p-6">
-        <h2 class="text-lg font-bold text-gray-700 mb-6 border-b pb-2">Unit Creation</h2>
+        <h2 class="text-lg font-bold text-gray-700 mb-6 border-b pb-2">${isEdit ? 'Alter Unit' : 'Unit Creation'}</h2>
         <form id="unit-form" class="space-y-4">
+            <input type="hidden" id="u-id" value="${isEdit ? editData.id : ''}">
             <div>
                 <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Symbol</label>
-                <input type="text" id="u-symbol" required class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none uppercase" placeholder="PCS">
+                <input type="text" id="u-symbol" value="${isEdit ? editData.symbol : ''}" required class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none uppercase" placeholder="PCS">
             </div>
             <div>
                 <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Formal Name</label>
-                <input type="text" id="u-formal" required class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none" placeholder="Pieces">
+                <input type="text" id="u-formal" value="${isEdit ? editData.formal_name : ''}" required class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none" placeholder="Pieces">
             </div>
             <div class="flex justify-end gap-3 mt-6">
                 <button type="button" onclick="history.back()" class="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
-                <button type="submit" class="px-4 py-2 text-sm bg-emerald-600 text-white rounded hover:bg-emerald-700">Create</button>
+                <button type="submit" class="px-4 py-2 text-sm bg-emerald-600 text-white rounded hover:bg-emerald-700">${isEdit ? 'Update' : 'Create'}</button>
             </div>
         </form>
     </div>`;
@@ -168,26 +264,30 @@ export function renderUnitForm() {
 export function initUnitFormLogic() {
     document.getElementById('unit-form').addEventListener('submit', async (e) => {
         e.preventDefault();
+        const id = document.getElementById('u-id').value;
         try {
             await Accounting.createUnit({
+                id: id,
                 symbol: document.getElementById('u-symbol').value,
                 formalName: document.getElementById('u-formal').value
             });
-            showToast('Unit Created!', 'success');
+            showToast(id ? 'Unit Updated' : 'Unit Created', 'success');
             window.history.back();
         } catch (err) { showToast(err.message, 'error'); }
     });
 }
 
 // --- STOCK ITEM ---
-export function renderStockItemForm() {
+export function renderStockItemForm(editData = null) {
+    const isEdit = !!editData;
     return `
     <div class="max-w-2xl mx-auto bg-white border border-gray-200 shadow-sm rounded-lg p-6">
-        <h2 class="text-lg font-bold text-gray-700 mb-6 border-b pb-2">Stock Item Creation</h2>
+        <h2 class="text-lg font-bold text-gray-700 mb-6 border-b pb-2">${isEdit ? 'Alter Stock Item' : 'Stock Item Creation'}</h2>
         <form id="item-form" class="space-y-5">
+            <input type="hidden" id="i-id" value="${isEdit ? editData.id : ''}">
             <div class="grid grid-cols-12 gap-4 items-center">
                 <label class="col-span-3 text-sm font-bold text-gray-600">Name</label>
-                <div class="col-span-9"><input type="text" id="i-name" required class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none" placeholder="e.g. iPhone 15"></div>
+                <div class="col-span-9"><input type="text" id="i-name" value="${isEdit ? editData.name : ''}" required class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none" placeholder="e.g. iPhone 15"></div>
             </div>
             <div class="grid grid-cols-12 gap-4 items-center">
                 <label class="col-span-3 text-sm font-bold text-gray-600">Unit</label>
@@ -199,14 +299,14 @@ export function renderStockItemForm() {
             </div>
             <div class="grid grid-cols-12 gap-4 items-center">
                 <label class="col-span-3 text-sm font-bold text-gray-600">HSN/SAC</label>
-                <div class="col-span-4"><input type="text" id="i-hsn" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none"></div>
+                <div class="col-span-4"><input type="text" id="i-hsn" value="${isEdit ? (editData.hsn_code||'') : ''}" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none"></div>
                 <label class="col-span-2 text-sm font-bold text-gray-600 text-right">Tax Rate %</label>
-                <div class="col-span-3"><input type="number" id="i-tax" value="18" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none"></div>
+                <div class="col-span-3"><input type="number" id="i-tax" value="${isEdit ? (editData.tax_rate||0) : 18}" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none"></div>
             </div>
 
             <div class="flex justify-end gap-3 mt-8 pt-4 border-t">
                 <button type="button" onclick="history.back()" class="px-6 py-2 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium">Cancel</button>
-                <button type="submit" class="px-6 py-2 rounded bg-emerald-600 text-white shadow hover:bg-emerald-700 text-sm font-medium">Create Item</button>
+                <button type="submit" class="px-6 py-2 rounded bg-emerald-600 text-white shadow hover:bg-emerald-700 text-sm font-medium">${isEdit ? 'Update' : 'Create Item'}</button>
             </div>
         </form>
     </div>`;
@@ -221,24 +321,31 @@ export function initStockItemFormLogic(units) {
         unitSelect.appendChild(opt);
     });
 
+    // Pre-select unit if in edit mode (we need to pass the current unit ID)
+    // For simplicity, user must re-select or we'd need to pass it in render
+    // Let's rely on standard HTML value attr if options exist
+
     document.getElementById('item-form').addEventListener('submit', async (e) => {
         e.preventDefault();
+        const id = document.getElementById('i-id').value;
         try {
             await Accounting.createStockItem({
+                id: id,
                 name: document.getElementById('i-name').value,
                 unitId: unitSelect.value,
                 hsn: document.getElementById('i-hsn').value,
                 taxRate: document.getElementById('i-tax').value,
                 type: 'Goods'
             });
-            showToast('Stock Item Created!', 'success');
-            document.getElementById('item-form').reset();
+            showToast(id ? 'Item Updated' : 'Item Created', 'success');
+            if(id) window.history.back();
+            else document.getElementById('item-form').reset();
         } catch (err) { showToast(err.message, 'error'); }
     });
 }
 
 // =============================================================================
-// 3. VOUCHER ENTRY SYSTEM (With Auto GST)
+// 4. VOUCHER ENTRY SYSTEM (With Party Details)
 // =============================================================================
 
 export function renderVoucherForm() {
@@ -256,7 +363,7 @@ export function renderVoucherForm() {
                 <div class="grid grid-cols-12 gap-4 mb-6">
                     <div class="col-span-3">
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Voucher Type</label>
-                        <select id="v-type" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none bg-gray-50">
+                        <select id="v-type" class="w-full border border-gray-300 rounded p-2 text-sm bg-gray-50 outline-none">
                             <option value="Sales">Sales</option>
                             <option value="Purchase">Purchase</option>
                             <option value="Payment">Payment</option>
@@ -267,7 +374,19 @@ export function renderVoucherForm() {
                     </div>
                     <div class="col-span-3">
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Date</label>
-                        <input type="date" id="v-date" value="${today}" required class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none">
+                        <input type="date" id="v-date" value="${today}" required class="w-full border border-gray-300 rounded p-2 text-sm outline-none">
+                    </div>
+                </div>
+
+                <div id="party-details-section" class="mb-6 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                    <div class="flex justify-between items-center mb-2 cursor-pointer" onclick="document.getElementById('party-fields').classList.toggle('hidden')">
+                         <h3 class="text-xs font-bold text-yellow-700 uppercase">Party / Customer Details (Click to Expand)</h3>
+                         <span class="text-xs text-yellow-600">▼</span>
+                    </div>
+                    <div id="party-fields" class="hidden grid grid-cols-2 gap-4">
+                        <input type="text" id="p-name" class="border border-gray-300 rounded p-2 text-sm w-full" placeholder="Party Name (e.g. Mr. Amit)">
+                        <input type="text" id="p-gstin" class="border border-gray-300 rounded p-2 text-sm w-full uppercase" placeholder="Party GSTIN">
+                        <textarea id="p-address" class="border border-gray-300 rounded p-2 text-sm w-full col-span-2" rows="2" placeholder="Mailing Address..."></textarea>
                     </div>
                 </div>
 
@@ -286,9 +405,8 @@ export function renderVoucherForm() {
                         </thead>
                         <tbody id="inv-entries"></tbody>
                     </table>
-                    <button type="button" id="btn-add-inv" class="mt-2 text-xs text-blue-600 font-bold hover:underline">+ Add Item</button>
-                    
-                    <div class="mt-2 text-right">
+                    <div class="flex justify-between mt-2">
+                         <button type="button" id="btn-add-inv" class="text-xs text-blue-600 font-bold hover:underline">+ Add Item</button>
                          <button type="button" id="btn-auto-gst" class="text-xs bg-blue-600 text-white px-3 py-1 rounded shadow hover:bg-blue-700">Auto Calculate GST</button>
                     </div>
                 </div>
@@ -370,7 +488,7 @@ export function initVoucherFormLogic(ledgers, items = []) {
         itemList.appendChild(o);
     });
 
-    // Toggle Inventory Section
+    // Toggle Inventory
     function toggleInv() {
         if (['Sales', 'Purchase'].includes(vType.value)) invSection.classList.remove('hidden');
         else invSection.classList.add('hidden');
@@ -381,8 +499,6 @@ export function initVoucherFormLogic(ledgers, items = []) {
     // --- AUTO GST CALCULATION ---
     function calculateGST() {
         let totalTaxAmount = 0;
-        
-        // 1. Calculate Total Tax from Items
         document.querySelectorAll('#inv-entries tr').forEach(tr => {
             const amt = parseFloat(tr.querySelector('.inv-amt').value) || 0;
             const taxRate = parseFloat(tr.querySelector('.inv-tax').value) || 0;
@@ -391,22 +507,19 @@ export function initVoucherFormLogic(ledgers, items = []) {
 
         if (totalTaxAmount === 0) return;
 
-        // 2. Determine IGST vs CGST/SGST (Simplification: Default to CGST+SGST)
         const cgstRow = findLedgerRow('CGST');
         const sgstRow = findLedgerRow('SGST');
         const igstRow = findLedgerRow('IGST');
 
-        // Logic: If IGST row exists, put full tax there. Else split between CGST/SGST.
         if (igstRow) {
             updateLedgerRowAmount(igstRow, totalTaxAmount);
             if (cgstRow) updateLedgerRowAmount(cgstRow, 0);
             if (sgstRow) updateLedgerRowAmount(sgstRow, 0);
         } else {
-            // Default to CGST + SGST split
             const splitTax = totalTaxAmount / 2;
-            
-            // If rows don't exist, create them automatically
             if (!cgstRow && !sgstRow) {
+                // If Sale(Cr), Tax is Cr. If Purchase(Dr), Tax is Dr.
+                // Simplified: Sales usually.
                 addLedgerRow('Cr', 'CGST', splitTax.toFixed(2));
                 addLedgerRow('Cr', 'SGST', splitTax.toFixed(2));
             } else {
@@ -429,7 +542,7 @@ export function initVoucherFormLogic(ledgers, items = []) {
 
     document.getElementById('btn-auto-gst').addEventListener('click', calculateGST);
 
-    // --- Inventory Row Logic ---
+    // --- Inventory Row ---
     function addInvRow() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -448,7 +561,6 @@ export function initVoucherFormLogic(ledgers, items = []) {
         const amt = tr.querySelector('.inv-amt');
         const tax = tr.querySelector('.inv-tax');
 
-        // Auto-fill tax rate on item selection
         itemInput.addEventListener('change', () => {
             const opt = Array.from(itemList.options).find(o => o.value === itemInput.value);
             if (opt) tax.value = opt.dataset.rate;
@@ -463,7 +575,7 @@ export function initVoucherFormLogic(ledgers, items = []) {
     }
     document.getElementById('btn-add-inv').addEventListener('click', addInvRow);
 
-    // --- Ledger Row Logic ---
+    // --- Ledger Row ---
     function addLedgerRow(defaultType = 'Dr', defaultName = '', defaultAmt = '') {
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -498,8 +610,7 @@ export function initVoucherFormLogic(ledgers, items = []) {
         drInput.addEventListener('input', calcTotals);
         crInput.addEventListener('input', calcTotals);
         tr.querySelector('.remove-row').addEventListener('click', () => { tr.remove(); calcTotals(); });
-        
-        calcTotals(); // Update totals immediately if default amt provided
+        calcTotals();
     }
 
     function calcTotals() {
@@ -516,7 +627,7 @@ export function initVoucherFormLogic(ledgers, items = []) {
     }
 
     document.getElementById('btn-add-row').addEventListener('click', () => addLedgerRow());
-    addLedgerRow('Dr'); addLedgerRow('Cr'); // Init
+    addLedgerRow('Dr'); addLedgerRow('Cr');
 
     // --- SUBMIT ---
     document.getElementById('voucher-form').addEventListener('submit', async (e) => {
@@ -532,7 +643,7 @@ export function initVoucherFormLogic(ledgers, items = []) {
                     qty: parseFloat(tr.querySelector('.inv-qty').value),
                     rate: parseFloat(tr.querySelector('.inv-rate').value),
                     amount: parseFloat(tr.querySelector('.inv-amt').value),
-                    tax_rate: parseFloat(tr.querySelector('.inv-tax').value) // Fixed: Now passing tax_rate
+                    tax_rate: parseFloat(tr.querySelector('.inv-tax').value)
                 });
             }
         });
@@ -543,7 +654,6 @@ export function initVoucherFormLogic(ledgers, items = []) {
             const opt = Array.from(ledgerList.options).find(o => o.value === name);
             const type = tr.querySelector('.row-type').value;
             const amt = parseFloat(type === 'Dr' ? tr.querySelector('.row-dr').value : tr.querySelector('.row-cr').value) || 0;
-            
             if (amt > 0 && opt) ledRows.push({ ledger_id: opt.dataset.id, amount: amt, type });
         });
 
@@ -553,7 +663,11 @@ export function initVoucherFormLogic(ledgers, items = []) {
                 date: document.getElementById('v-date').value,
                 narration: document.getElementById('v-narration').value,
                 entries: ledRows,
-                inventory: invRows
+                inventory: invRows,
+                // NEW: Party Details
+                party_name: document.getElementById('p-name').value,
+                party_gstin: document.getElementById('p-gstin').value,
+                party_address: document.getElementById('p-address').value
             });
             showToast('Voucher Saved!', 'success');
             document.getElementById('voucher-form').reset();
@@ -565,14 +679,19 @@ export function initVoucherFormLogic(ledgers, items = []) {
 }
 
 // =============================================================================
-// 4. BILL GENERATION (Tax Invoice View)
+// 5. BILL GENERATION (Tax Invoice View)
 // =============================================================================
 
 export function renderVoucherView(voucher) {
     const isInvoice = voucher.type === 'Sales' || voucher.type === 'Purchase';
     
-    // Find Party Ledger (Usually the first Debit ledger for Sales)
-    const partyLedger = voucher.entries.find(e => e.type === (voucher.type === 'Sales' ? 'Dr' : 'Cr'))?.ledgers || {};
+    // Determine Party Info: Override > Ledger > Fallback
+    const ledgerParty = voucher.entries.find(e => e.type === (voucher.type === 'Sales' ? 'Dr' : 'Cr'))?.ledgers || {};
+    
+    const displayPartyName = voucher.party_name || ledgerParty.name || 'Cash/Unknown';
+    const displayAddress = voucher.party_address || ledgerParty.mailing_address || '';
+    const displayGstin = voucher.party_gstin || ledgerParty.gstin || '-';
+
     const totalAmount = voucher.entries.filter(e => e.type === 'Dr').reduce((acc, e) => acc + e.amount, 0);
 
     return `
@@ -603,11 +722,10 @@ export function renderVoucherView(voucher) {
 
             <div class="mb-6 p-4 bg-gray-50 rounded border border-gray-100">
                 <p class="text-xs font-bold text-gray-400 uppercase mb-1">Bill To</p>
-                <h3 class="font-bold text-gray-800 text-lg">${partyLedger.name || 'Cash/Unknown'}</h3>
-                <p class="text-sm text-gray-600">${partyLedger.mailing_address || ''}</p>
+                <h3 class="font-bold text-gray-800 text-lg">${displayPartyName}</h3>
+                <p class="text-sm text-gray-600 whitespace-pre-line">${displayAddress}</p>
                 <div class="mt-2 text-sm">
-                    <span class="font-bold">GSTIN:</span> ${partyLedger.gstin || '-'} &nbsp;|&nbsp;
-                    <span class="font-bold">State:</span> ${partyLedger.state_name || '-'}
+                    <span class="font-bold">GSTIN:</span> ${displayGstin}
                 </div>
             </div>
 
@@ -667,14 +785,13 @@ export function renderVoucherView(voucher) {
     </div>`;
 }
 
-// Helper: Number to Words (Simplified)
+// Helper
 function convertNumberToWords(amount) {
-    return amount.toFixed(0); // For now just the number, full implementation is long
+    return amount.toFixed(0); 
 }
 
-// ... [Keep renderBalanceSheet, renderDayBook, renderProfitLoss, renderTrialBalance] ...
+// Reports
 export function renderBalanceSheet(data) {
-    // Data expected: { liabilities: [], assets: [], totalL: 0, totalA: 0 }
     return `
     <div class="bg-white p-6 rounded shadow-sm border border-gray-200 print:shadow-none print:border-none">
         <div class="text-center mb-6">
@@ -682,47 +799,32 @@ export function renderBalanceSheet(data) {
             <h3 class="font-bold text-gray-600">Balance Sheet</h3>
             <p class="text-xs text-gray-500">as at ${new Date().toDateString()}</p>
         </div>
-
         <div class="flex border border-gray-300">
             <div class="w-1/2 border-r border-gray-300">
                 <div class="bg-gray-100 p-2 font-bold text-center border-b border-gray-300">Liabilities</div>
                 <div class="p-0">
                     <table class="w-full text-sm">
-                        ${data.liabilities.map(g => `
-                            <tr>
-                                <td class="p-2 border-b border-gray-100">${g.name}</td>
-                                <td class="p-2 border-b border-gray-100 text-right font-mono">${formatCurrency(g.amount)}</td>
-                            </tr>
-                        `).join('')}
+                        ${data.liabilities.map(g => `<tr><td class="p-2 border-b border-gray-100">${g.name}</td><td class="p-2 border-b border-gray-100 text-right font-mono">${formatCurrency(g.amount)}</td></tr>`).join('')}
                     </table>
                 </div>
             </div>
-
             <div class="w-1/2">
                 <div class="bg-gray-100 p-2 font-bold text-center border-b border-gray-300">Assets</div>
                 <div class="p-0">
                     <table class="w-full text-sm">
-                        ${data.assets.map(g => `
-                            <tr>
-                                <td class="p-2 border-b border-gray-100">${g.name}</td>
-                                <td class="p-2 border-b border-gray-100 text-right font-mono">${formatCurrency(g.amount)}</td>
-                            </tr>
-                        `).join('')}
+                        ${data.assets.map(g => `<tr><td class="p-2 border-b border-gray-100">${g.name}</td><td class="p-2 border-b border-gray-100 text-right font-mono">${formatCurrency(g.amount)}</td></tr>`).join('')}
                     </table>
                 </div>
             </div>
         </div>
-
         <div class="flex border-x border-b border-gray-300 font-bold bg-gray-50">
             <div class="w-1/2 p-2 text-right border-r border-gray-300 font-mono">${formatCurrency(data.totalLiabilities)}</div>
             <div class="w-1/2 p-2 text-right font-mono">${formatCurrency(data.totalAssets)}</div>
         </div>
-        
         <div class="mt-4 text-center">
             <button onclick="window.print()" class="bg-gray-800 text-white px-4 py-1 rounded text-xs hover:bg-gray-700">Print Report</button>
         </div>
-    </div>
-    `;
+    </div>`;
 }
 
 export function renderDayBook(vouchers) {
@@ -730,14 +832,7 @@ export function renderDayBook(vouchers) {
     <div class="bg-white rounded shadow-sm border border-gray-200 overflow-hidden">
         <table class="w-full text-sm text-left">
             <thead class="bg-gray-100 text-gray-700 font-bold border-b border-gray-200">
-                <tr>
-                    <th class="p-3">Date</th>
-                    <th class="p-3">Particulars</th>
-                    <th class="p-3">Vch Type</th>
-                    <th class="p-3">Vch No.</th>
-                    <th class="p-3 text-right">Debit</th>
-                    <th class="p-3 text-right">Credit</th>
-                </tr>
+                <tr><th class="p-3">Date</th><th class="p-3">Particulars</th><th class="p-3">Vch Type</th><th class="p-3">Vch No.</th><th class="p-3 text-right">Debit</th><th class="p-3 text-right">Credit</th></tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
                 ${vouchers.map(v => `
@@ -752,9 +847,8 @@ export function renderDayBook(vouchers) {
                 `).join('')}
             </tbody>
         </table>
-    </div>
-    `;
+    </div>`;
 }
 
-export function renderProfitLoss(data) { return renderBalanceSheet(data); /* Placeholder */ }
-export function renderTrialBalance(data) { return renderBalanceSheet(data); /* Placeholder */ }
+export function renderProfitLoss(data) { return renderBalanceSheet(data); }
+export function renderTrialBalance(data) { return renderBalanceSheet(data); }
