@@ -188,6 +188,51 @@ export async function getDayBook() {
     });
 }
 
+/**
+ * Fetch a single voucher with all its entries
+ * (Used for View/Print functionality)
+ */
+export async function getVoucher(voucherId) {
+    if (!state.currentCompany) return null;
+
+    // 1. Fetch Header
+    const { data: voucher, error } = await supabase
+        .from('vouchers')
+        .select('*')
+        .eq('id', voucherId)
+        .single();
+
+    if (error) throw error;
+
+    // 2. Fetch Entries with Ledger Names
+    const { data: entries, error: eError } = await supabase
+        .from('voucher_entries')
+        .select(`
+            *,
+            ledgers ( name )
+        `)
+        .eq('voucher_id', voucherId)
+        .order('type', { ascending: false }); // Dr first, then Cr
+
+    if (eError) throw eError;
+
+    return { ...voucher, entries };
+}
+
+/**
+ * Delete a voucher
+ */
+export async function deleteVoucher(voucherId) {
+    // RLS policies ensure we can only delete our own company's data
+    const { error } = await supabase
+        .from('vouchers')
+        .delete()
+        .eq('id', voucherId);
+
+    if (error) throw error;
+    return true;
+}
+
 // =============================================================================
 // 4. ANALYTICS & DASHBOARD
 // =============================================================================
