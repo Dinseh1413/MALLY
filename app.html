@@ -57,6 +57,14 @@
                 <span class="w-4 h-4 flex items-center justify-center font-bold text-emerald-600 text-xs bg-emerald-100 rounded">L</span>
                 Create Ledger
             </button>
+            <button data-route="unit-create" class="nav-item w-full text-left px-3 py-2 rounded-md hover:bg-gray-100 text-sm text-gray-700 flex items-center gap-3 transition-colors">
+                <span class="w-4 h-4 flex items-center justify-center font-bold text-blue-600 text-xs bg-blue-100 rounded">U</span>
+                Create Unit
+            </button>
+            <button data-route="item-create" class="nav-item w-full text-left px-3 py-2 rounded-md hover:bg-gray-100 text-sm text-gray-700 flex items-center gap-3 transition-colors">
+                <span class="w-4 h-4 flex items-center justify-center font-bold text-blue-600 text-xs bg-blue-100 rounded">I</span>
+                Create Stock Item
+            </button>
 
             <div class="pt-4 pb-2 px-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Transactions</div>
             
@@ -91,7 +99,7 @@
                     <div class="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs" id="user-initials">U</div>
                     <div class="text-xs font-medium text-gray-700 truncate w-24" id="user-email">user@email.com</div>
                 </div>
-                <button id="btn-logout" class="text-xs text-red-500 hover:text-red-700 font-medium" title="Logout (F10)">
+                <button id="btn-logout" class="text-xs text-red-500 hover:text-red-700 font-medium" title="Logout">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
                 </button>
             </div>
@@ -104,7 +112,7 @@
             <h2 id="page-title" class="text-lg font-bold text-gray-800">Gateway of Mally</h2>
             <div class="flex items-center gap-4">
                 <span class="text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded border border-yellow-200 font-medium" id="header-date">...</span>
-                <button class="text-sm text-emerald-600 font-medium hover:underline" onclick="window.open('https://github.com/your-repo', '_blank')">Help</button>
+                <button class="text-sm text-emerald-600 font-medium hover:underline">Help</button>
             </div>
         </header>
 
@@ -144,6 +152,24 @@
                     <div>
                         <label class="block text-xs font-bold text-gray-500 mb-1">Currency Symbol</label>
                         <input type="text" name="currency" value="₹" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none">
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-100 pt-3">
+                    <label class="block text-xs font-bold text-emerald-600 uppercase mb-2">Statutory Details (GST)</label>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 mb-1">GSTIN</label>
+                            <input type="text" name="gstin" class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none uppercase" placeholder="Optional">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 mb-1">State Code *</label>
+                            <input type="text" name="state_code" required class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none" placeholder="e.g. 27">
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="block text-xs font-bold text-gray-500 mb-1">State Name *</label>
+                        <input type="text" name="state_name" required class="w-full border border-gray-300 rounded p-2 text-sm focus:ring-2 ring-emerald-500 outline-none" placeholder="e.g. Maharashtra">
                     </div>
                 </div>
 
